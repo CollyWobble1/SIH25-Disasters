@@ -1,0 +1,40 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // 1. SOS Emergency Transmissions
+    match /sos_requests/{requestId} {
+      allow read, create: if true;
+      allow update: if true;
+      allow delete: if false;
+    }
+
+    // 2. Hospital Facilities Registry
+    match /hospitals/{hospitalId} {
+      // READ-ONLY: Any emergency responder, authority, or user can monitor hospital readiness
+      allow read: if true;
+
+      // REGISTRATION: An authenticated hospital user can register their own document with isVerified = false
+      allow create: if request.auth != null 
+                    && request.auth.uid == hospitalId
+                    && request.resource.data.isVerified == false
+                    && request.resource.data.ownerUid == request.auth.uid;
+
+      // UPDATES: Strictly partitioned permissions
+      allow update: if request.auth != null && (
+        // Case A: Verified Hospital Account updating their own capacity & telemetry
+        // (Hospital is NOT allowed to alter their own isVerified flag)
+        (request.auth.uid == hospitalId 
+         && resource.data.isVerified == true 
+         && request.resource.data.isVerified == resource.data.isVerified)
+        ||
+        // Case B: Authority approving pending hospital registration
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isVerified', 'verifiedAt', 'updatedAt'])
+         && request.resource.data.isVerified == true)
+      );
+
+      // Deletion is restricted
+      allow delete: if false;
+    }
+  }
+}

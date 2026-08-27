@@ -1,0 +1,292 @@
+/* Mobile-first SOS Emergency Page Styling */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+:root {
+  --sos-page-bg: #0D1117;
+  --sos-panel-bg: #161B22;
+  --sos-input-bg: #0D1117;
+  --sos-border: #30363D;
+  --sos-border-focus: #58A6FF;
+  --sos-text: #F0F6FC;
+  --sos-text-muted: #8B949E;
+  --sos-accent-red: #D32F2F;
+  --sos-accent-red-glow: rgba(211, 47, 47, 0.4);
+}
+
+.sos-page-wrapper {
+  min-height: 100vh;
+  background-color: #05080c;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 16px;
+  box-sizing: border-box;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: var(--sos-text);
+}
+
+.sos-page-container {
+  width: 100%;
+  max-width: 420px;
+  min-height: 750px;
+  background-color: var(--sos-panel-bg);
+  border: 1px solid var(--sos-border);
+  border-radius: 24px;
+  padding: 28px 24px;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+  position: relative;
+}
+
+/* Header & Back Button */
+.sos-top-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.sos-back-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--sos-border);
+  color: var(--sos-text);
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+}
+
+.sos-back-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.sos-alert-beacon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #ff6b6b;
+  background: rgba(211, 47, 47, 0.15);
+  border: 1px solid rgba(211, 47, 47, 0.35);
+  padding: 4px 10px;
+  border-radius: 20px;
+}
+
+.beacon-dot {
+  width: 7px;
+  height: 7px;
+  background-color: #ff6b6b;
+  border-radius: 50%;
+}
+
+/* Page Titles */
+.sos-page-title {
+  font-size: 1.6rem;
+  font-weight: 800;
+  margin: 0 0 6px 0;
+  letter-spacing: -0.02em;
+  color: #FFFFFF;
+}
+
+.sos-page-subtitle {
+  font-size: 0.88rem;
+  color: var(--sos-text-muted);
+  margin: 0 0 24px 0;
+  line-height: 1.4;
+}
+
+/* Category Grid Selector */
+.sos-form-section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  flex: 1;
+}
+
+.sos-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--sos-text-muted);
+  margin-bottom: 8px;
+  display: block;
+}
+
+.type-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.type-card-btn {
+  background-color: var(--sos-input-bg);
+  border: 1.5px solid var(--sos-border);
+  color: var(--sos-text);
+  padding: 14px 12px;
+  border-radius: 12px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.18s ease;
+}
+
+.type-card-btn.active {
+  border-color: #D32F2F;
+  background-color: rgba(211, 47, 47, 0.15);
+  color: #FFFFFF;
+  box-shadow: 0 0 12px rgba(211, 47, 47, 0.3);
+}
+
+.type-icon {
+  font-size: 1.4rem;
+}
+
+/* Notes Textarea */
+.sos-textarea {
+  width: 100%;
+  background-color: var(--sos-input-bg);
+  border: 1px solid var(--sos-border);
+  color: var(--sos-text);
+  padding: 12px 14px;
+  border-radius: 12px;
+  font-size: 0.92rem;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 90px;
+  box-sizing: border-box;
+  transition: border-color 0.2s ease;
+  outline: none;
+}
+
+.sos-textarea:focus {
+  border-color: var(--sos-border-focus);
+}
+
+/* GPS Status Preview */
+.gps-status-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  color: var(--sos-text-muted);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--sos-border);
+}
+
+.gps-icon {
+  color: #3fb950;
+}
+
+/* Dispatch Button */
+.sos-submit-btn {
+  width: 100%;
+  padding: 18px;
+  background: linear-gradient(135deg, #D32F2F 0%, #A61919 100%);
+  color: #FFFFFF;
+  border: none;
+  border-radius: 14px;
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  box-shadow: 0 8px 24px var(--sos-accent-red-glow);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  margin-top: 14px;
+}
+
+.sos-submit-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(211, 47, 47, 0.6);
+}
+
+.sos-submit-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Sent / Confirmation Screen */
+.sos-sent-screen {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: 20px 0;
+}
+
+.sent-beacon-icon {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: rgba(46, 160, 67, 0.15);
+  border: 2px solid rgba(46, 160, 67, 0.5);
+  color: #3fb950;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+  animation: pulseSent 2s infinite ease-in-out;
+}
+
+@keyframes pulseSent {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(46, 160, 67, 0.4); }
+  70% { transform: scale(1.05); box-shadow: 0 0 0 20px rgba(46, 160, 67, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(46, 160, 67, 0); }
+}
+
+.sent-heading {
+  font-size: 1.55rem;
+  font-weight: 800;
+  color: #FFFFFF;
+  margin: 0 0 10px 0;
+}
+
+.sent-instructions {
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--sos-text-muted);
+  max-width: 320px;
+  margin: 0 0 28px 0;
+}
+
+.sent-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+@media (max-width: 480px) {
+  .sos-page-wrapper {
+    padding: 0;
+  }
+  .sos-page-container {
+    border-radius: 0;
+    min-height: 100vh;
+    border: none;
+    padding: 20px 18px;
+  }
+}

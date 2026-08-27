@@ -1,0 +1,13 @@
+{
+  "appId": "com.sos.app",
+  "appName": "SOS Emergency App",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "Geolocation": {
+      "permissions": ["location"]
+    }
+  }
+}

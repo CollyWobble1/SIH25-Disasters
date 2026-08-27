@@ -1,0 +1,765 @@
+/* Authority Incident Command Dashboard Styling */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap');
+
+:root {
+  --eoc-bg: #0d1117;
+  --eoc-card-bg: #161b22;
+  --eoc-card-inner: #0d1117;
+  --eoc-border: #30363d;
+  --eoc-border-light: #484f58;
+  --eoc-text-primary: #f0f6fc;
+  --eoc-text-secondary: #8b949e;
+  --eoc-text-muted: #6e7681;
+  --eoc-nav-bg: #1A1A1A;
+  
+  --severity-pending: #D32F2F;
+  --severity-pending-bg: rgba(211, 47, 47, 0.12);
+  --severity-pending-border: rgba(211, 47, 47, 0.35);
+
+  --severity-dispatched: #F59E0B;
+  --severity-dispatched-bg: rgba(245, 158, 11, 0.12);
+  --severity-dispatched-border: rgba(245, 158, 11, 0.35);
+
+  --severity-resolved: #388E3C;
+  --severity-resolved-bg: rgba(56, 142, 60, 0.12);
+  --severity-resolved-border: rgba(56, 142, 60, 0.35);
+
+  --badge-medical: #FF5252;
+  --badge-fire: #FF7043;
+  --badge-trapped: #FFA726;
+  --badge-other: #42A5F5;
+}
+
+.eoc-container {
+  min-height: 100vh;
+  background-color: var(--eoc-bg);
+  color: var(--eoc-text-primary);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+/* 1. Header & Navigation */
+.eoc-navbar {
+  background-color: var(--eoc-nav-bg);
+  border-bottom: 1px solid var(--eoc-border);
+  padding: 14px 28px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+.eoc-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.eoc-brand-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(135deg, #D32F2F 0%, #B71C1C 100%);
+  border-radius: 8px;
+  box-shadow: 0 0 12px rgba(211, 47, 47, 0.5);
+  color: #ffffff;
+}
+
+.eoc-title-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.eoc-title {
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.eoc-subtitle {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--eoc-text-secondary);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin: 2px 0 0 0;
+}
+
+.eoc-nav-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* Live Status Indicator Badge */
+.eoc-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: rgba(46, 160, 67, 0.15);
+  border: 1px solid rgba(46, 160, 67, 0.4);
+  border-radius: 20px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #3fb950;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.eoc-pulse-dot {
+  width: 8px;
+  height: 8px;
+  background-color: #3fb950;
+  border-radius: 50%;
+  position: relative;
+}
+
+.eoc-pulse-dot::after {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background-color: rgba(63, 185, 80, 0.6);
+  animation: pulseGlow 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulseGlow {
+  0% { transform: scale(0.6); opacity: 0.9; }
+  70% { transform: scale(1.8); opacity: 0; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
+
+/* Top Tab Switcher: Incidents vs Hospital Readiness */
+.eoc-view-tabs {
+  background-color: #12161d;
+  border-bottom: 1px solid var(--eoc-border);
+  padding: 0 28px;
+  display: flex;
+  gap: 8px;
+}
+
+.eoc-tab-btn {
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  color: var(--eoc-text-secondary);
+  font-size: 0.92rem;
+  font-weight: 700;
+  padding: 14px 18px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+}
+
+.eoc-tab-btn:hover {
+  color: var(--eoc-text-primary);
+}
+
+.eoc-tab-btn.active {
+  color: #58a6ff;
+  border-bottom-color: #58a6ff;
+}
+
+.eoc-tab-badge {
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background-color: #21262d;
+  color: var(--eoc-text-secondary);
+}
+
+.eoc-tab-btn.active .eoc-tab-badge {
+  background-color: rgba(88, 166, 255, 0.2);
+  color: #58a6ff;
+}
+
+/* Dashboard Body & Subheader */
+.eoc-content {
+  padding: 28px;
+  max-width: 1400px;
+  margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Toolbar & Filters */
+.eoc-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--eoc-border);
+}
+
+.eoc-filter-bar {
+  display: inline-flex;
+  background-color: #161b22;
+  border: 1px solid var(--eoc-border);
+  padding: 4px;
+  border-radius: 10px;
+  gap: 4px;
+}
+
+.eoc-filter-btn {
+  background: transparent;
+  border: none;
+  color: var(--eoc-text-secondary);
+  font-size: 0.88rem;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+}
+
+.eoc-filter-btn:hover {
+  color: var(--eoc-text-primary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.eoc-filter-btn.active {
+  background-color: #21262d;
+  color: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.eoc-filter-count {
+  font-size: 0.75rem;
+  padding: 2px 7px;
+  border-radius: 12px;
+  background-color: #30363d;
+  color: #f0f6fc;
+}
+
+.eoc-filter-btn.active .eoc-filter-count {
+  background-color: #388bfd;
+  color: #ffffff;
+}
+
+.eoc-stats-summary {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.eoc-stat-item {
+  font-size: 0.85rem;
+  color: var(--eoc-text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.eoc-stat-value {
+  font-weight: 700;
+  color: var(--eoc-text-primary);
+}
+
+/* KPI Overview Cards for Hospital Readiness */
+.eoc-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.eoc-kpi-card {
+  background-color: var(--eoc-card-bg);
+  border: 1px solid var(--eoc-border);
+  border-radius: 12px;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.eoc-kpi-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--eoc-text-secondary);
+}
+
+.eoc-kpi-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 2rem;
+  font-weight: 800;
+  line-height: 1;
+  color: #ffffff;
+}
+
+.eoc-kpi-sub {
+  font-size: 0.78rem;
+  color: var(--eoc-text-muted);
+}
+
+/* 2. Responsive CSS Grid for Incident Cards */
+.eoc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 20px;
+}
+
+/* Incident Card */
+.eoc-card {
+  background-color: var(--eoc-card-bg);
+  border: 1px solid var(--eoc-border);
+  border-radius: 10px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  position: relative;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.eoc-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  border-color: var(--eoc-border-light);
+}
+
+/* High-visibility severity left border accents */
+.eoc-card.severity-pending {
+  border-left: 6px solid var(--severity-pending);
+}
+
+.eoc-card.severity-dispatched {
+  border-left: 6px solid var(--severity-dispatched);
+}
+
+.eoc-card.severity-resolved {
+  border-left: 6px solid var(--severity-resolved);
+}
+
+/* Hospital Card Severity Left Border */
+.eoc-card.hospital-available {
+  border-left: 6px solid #10B981;
+}
+
+.eoc-card.hospital-warning {
+  border-left: 6px solid #F59E0B;
+}
+
+.eoc-card.hospital-max {
+  border-left: 6px solid #EF4444;
+}
+
+/* Card Header */
+.eoc-card-header {
+  padding: 16px 18px 12px 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.eoc-badge-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Request Type Badge */
+.eoc-type-badge {
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 4px 10px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.eoc-type-badge.type-medical {
+  background-color: rgba(255, 82, 82, 0.15);
+  color: #ff6b6b;
+  border: 1px solid rgba(255, 82, 82, 0.4);
+}
+
+.eoc-type-badge.type-fire {
+  background-color: rgba(255, 112, 67, 0.15);
+  color: #ff8a65;
+  border: 1px solid rgba(255, 112, 67, 0.4);
+}
+
+.eoc-type-badge.type-trapped {
+  background-color: rgba(255, 167, 38, 0.15);
+  color: #ffb74d;
+  border: 1px solid rgba(255, 167, 38, 0.4);
+}
+
+.eoc-type-badge.type-other {
+  background-color: rgba(66, 165, 245, 0.15);
+  color: #64b5f6;
+  border: 1px solid rgba(66, 165, 245, 0.4);
+}
+
+/* Status Badge */
+.eoc-status-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+.eoc-status-badge.status-pending {
+  background-color: var(--severity-pending-bg);
+  color: #ff8080;
+  border: 1px solid var(--severity-pending-border);
+}
+
+.eoc-status-badge.status-dispatched {
+  background-color: var(--severity-dispatched-bg);
+  color: #fcd34d;
+  border: 1px solid var(--severity-dispatched-border);
+}
+
+.eoc-status-badge.status-resolved {
+  background-color: var(--severity-resolved-bg);
+  color: #6ee7b7;
+  border: 1px solid var(--severity-resolved-border);
+}
+
+.eoc-status-badge.status-available {
+  background-color: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.eoc-status-badge.status-critical {
+  background-color: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.eoc-status-badge.status-max {
+  background-color: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  animation: pulseBadge 1.8s infinite;
+}
+
+@keyframes pulseBadge {
+  0% { opacity: 0.8; }
+  50% { opacity: 1; }
+  100% { opacity: 0.8; }
+}
+
+/* Timestamp */
+.eoc-timestamp {
+  font-size: 0.8rem;
+  color: var(--eoc-text-secondary);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+/* 3. Card Body & Content */
+.eoc-card-body {
+  padding: 0 18px 16px 18px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Location Coordinates */
+.eoc-location-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background-color: var(--eoc-card-inner);
+  border: 1px solid var(--eoc-border);
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+
+.eoc-location-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  color: var(--eoc-text-secondary);
+}
+
+.eoc-pin-icon {
+  color: #ea4335;
+  flex-shrink: 0;
+}
+
+.eoc-coords {
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, Menlo, monospace;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #58a6ff;
+  text-decoration: none;
+  background: rgba(88, 166, 255, 0.1);
+  padding: 3px 8px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.eoc-coords:hover {
+  background: rgba(88, 166, 255, 0.2);
+  color: #79c0ff;
+  text-decoration: underline;
+}
+
+.eoc-coords-unavailable {
+  font-size: 0.8rem;
+  color: var(--eoc-text-muted);
+  font-style: italic;
+}
+
+/* User Notes Area - Distinct Blockquote / Grey Card Box */
+.eoc-notes-box {
+  background-color: var(--eoc-card-inner);
+  border-left: 3px solid var(--eoc-border-light);
+  border-top: 1px solid var(--eoc-border);
+  border-right: 1px solid var(--eoc-border);
+  border-bottom: 1px solid var(--eoc-border);
+  padding: 12px 14px;
+  border-radius: 0 6px 6px 0;
+  margin: 0;
+}
+
+.eoc-notes-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--eoc-text-muted);
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.eoc-notes-text {
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: var(--eoc-text-primary);
+  word-break: break-word;
+}
+
+.eoc-notes-empty {
+  font-size: 0.82rem;
+  color: var(--eoc-text-muted);
+  font-style: italic;
+}
+
+/* Hospital Metrics Section in Card */
+.eoc-hosp-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.eoc-hosp-stat-box {
+  background-color: var(--eoc-card-inner);
+  border: 1px solid var(--eoc-border);
+  padding: 10px 12px;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.eoc-hosp-stat-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--eoc-text-muted);
+}
+
+.eoc-hosp-stat-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+/* 4. Action Controls */
+.eoc-card-footer {
+  padding: 12px 18px 16px 18px;
+  border-top: 1px solid rgba(48, 54, 61, 0.6);
+  background-color: rgba(22, 27, 34, 0.6);
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.eoc-btn {
+  flex: 1;
+  min-width: 120px;
+  padding: 9px 14px;
+  border-radius: 6px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+  outline: none;
+}
+
+.eoc-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Dispatch Button */
+.eoc-btn-dispatch {
+  background: linear-gradient(180deg, #d97706 0%, #b45309 100%);
+  color: #ffffff;
+  border-color: #f59e0b;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.eoc-btn-dispatch:hover:not(:disabled) {
+  background: linear-gradient(180deg, #f59e0b 0%, #d97706 100%);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.4);
+}
+
+/* Resolve Button */
+.eoc-btn-resolve {
+  background: linear-gradient(180deg, #2e7d32 0%, #1b5e20 100%);
+  color: #ffffff;
+  border-color: #388e3c;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.eoc-btn-resolve:hover:not(:disabled) {
+  background: linear-gradient(180deg, #388e3c 0%, #2e7d32 100%);
+  box-shadow: 0 0 8px rgba(56, 142, 60, 0.4);
+}
+
+/* Reopen / Pending Button */
+.eoc-btn-reopen {
+  background-color: transparent;
+  color: var(--eoc-text-secondary);
+  border-color: var(--eoc-border);
+}
+
+.eoc-btn-reopen:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.06);
+  color: var(--eoc-text-primary);
+  border-color: var(--eoc-border-light);
+}
+
+/* Empty State */
+.eoc-empty-state {
+  grid-column: 1 / -1;
+  background-color: var(--eoc-card-bg);
+  border: 1px dashed var(--eoc-border);
+  border-radius: 12px;
+  padding: 60px 20px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.eoc-empty-icon {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background-color: rgba(56, 139, 253, 0.1);
+  color: #58a6ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+
+.eoc-empty-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--eoc-text-primary);
+  margin: 0;
+}
+
+.eoc-empty-desc {
+  font-size: 0.9rem;
+  color: var(--eoc-text-secondary);
+  max-width: 420px;
+  margin: 0;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .eoc-navbar {
+    padding: 14px 18px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  
+  .eoc-nav-right {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .eoc-view-tabs {
+    padding: 0 16px;
+    overflow-x: auto;
+  }
+
+  .eoc-content {
+    padding: 18px;
+  }
+
+  .eoc-toolbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .eoc-filter-bar {
+    width: 100%;
+    overflow-x: auto;
+  }
+
+  .eoc-grid {
+    grid-template-columns: 1fr;
+  }
+}
