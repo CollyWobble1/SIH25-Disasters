@@ -62,7 +62,6 @@ export default function HospitalDashboard() {
   useEffect(() => {
     if (!currentUser) return;
 
-    setDocLoading(true);
     const hospRef = doc(db, "hospitals", currentUser.uid);
 
     const unsub = onSnapshot(

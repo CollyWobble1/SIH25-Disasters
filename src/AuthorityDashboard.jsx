@@ -1,6 +1,22 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { collection, onSnapshot, doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase";
+import {
+  getZonesSortedByRisk,
+  getTopRiskZones,
+  getRiskSummary,
+  getCurrentSeasonInfo,
+  getRiskColor,
+  getRiskBg,
+  TOP_RANK_STYLES,
+} from "./utils/riskAnalytics";
+import {
+  detectSOSClusters,
+  findNearestHospital,
+  playClusterAlertSound,
+} from "./utils/sosClustering";
+import { MapContainer, TileLayer, CircleMarker, Circle, Popup, Tooltip, useMap } from "react-leaflet";
+import "leaflet/dist/leaflet.css";
 import "./AuthorityDashboard.css";
 
 // Helper function to format timestamp to relative time (e.g., "10 mins ago")
@@ -37,13 +53,28 @@ function formatTimeAgo(createdAt) {
 }
 
 export default function AuthorityDashboard() {
-  const [activeTab, setActiveTab] = useState("incidents"); // 'incidents' | 'hospitals'
+  const [activeTab, setActiveTab] = useState("incidents"); // 'incidents' | 'hospitals' | 'risk'
+
+  // Risk Analytics state
+  const [riskSearch, setRiskSearch] = useState("");
+  const [riskLevelFilter, setRiskLevelFilter] = useState("ALL"); // 'ALL'|'CRITICAL'|'HIGH'|'MODERATE'|'LOW'
+  const [riskSortField, setRiskSortField] = useState("vulnerabilityScore"); // 'vulnerabilityScore'|'incidentCount'
+  const allZones = useMemo(() => getZonesSortedByRisk(), []);
+  const riskSummary = useMemo(() => getRiskSummary(), []);
   const [requests, setRequests] = useState([]);
   const [hospitals, setHospitals] = useState([]);
   const [filter, setFilter] = useState("all"); // 'all' | 'pending' | 'dispatched' | 'resolved'
   const [updatingId, setUpdatingId] = useState(null);
   const [approvingId, setApprovingId] = useState(null);
   const [loading, setLoading] = useState(true);
+  // Fullscreen photo lightbox
+  const [lightboxSrc, setLightboxSrc] = useState(null);
+
+  // Proximity Clustering & Priority Alert System state
+  const [selectedCluster, setSelectedCluster] = useState(null);
+  const [audioEnabled, setAudioEnabled] = useState(true);
+  const [dispatchingClusterId, setDispatchingClusterId] = useState(null);
+  const lastAlertedClusterIdRef = useRef(null);
 
   // 1. Subscribe to SOS Requests in real-time
   useEffect(() => {
@@ -109,6 +140,48 @@ export default function AuthorityDashboard() {
 
     return () => unsubscribe();
   }, []);
+
+  // Proximity Clustering Engine: Groups active alerts within 500m & 15 mins
+  const activeClusters = useMemo(() => {
+    return detectSOSClusters(requests, 500, 15);
+  }, [requests]);
+
+  // Audio Cue Trigger on new critical / elevated clusters
+  useEffect(() => {
+    if (activeClusters.length > 0) {
+      const topCluster = activeClusters[0];
+      if (topCluster.id !== lastAlertedClusterIdRef.current) {
+        lastAlertedClusterIdRef.current = topCluster.id;
+        if (audioEnabled) {
+          playClusterAlertSound(topCluster.severityLevel === "MASS_CRITICAL");
+        }
+      }
+    }
+  }, [activeClusters, audioEnabled]);
+
+  // Batch Dispatch Emergency Unit to entire cluster
+  const handleBatchDispatchCluster = async (cluster) => {
+    if (!cluster || !cluster.requestIds || !cluster.requestIds.length) return;
+    try {
+      setDispatchingClusterId(cluster.id);
+      const promises = cluster.requestIds.map((id) => {
+        const reqRef = doc(db, "sos_requests", id);
+        return updateDoc(reqRef, {
+          status: "dispatched",
+          dispatchedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      });
+      await Promise.all(promises);
+      alert(`🚨 Emergency units successfully dispatched to all ${cluster.victimCount} clustered victims!`);
+      setSelectedCluster(null);
+    } catch (err) {
+      console.error("Batch dispatch cluster error:", err);
+      alert(`Could not dispatch emergency units: ${err.message || "Unknown error"}`);
+    } finally {
+      setDispatchingClusterId(null);
+    }
+  };
 
   // SOS Incident Status Update Handler
   const handleUpdateStatus = async (id, newStatus) => {
@@ -220,7 +293,62 @@ export default function AuthorityDashboard() {
         </div>
       </header>
 
-      {/* Top View Mode Tabs: SOS Incidents vs Hospital Capacity Monitor */}
+      {/* Live Mass Emergency Flash Bar for Proximity Clusters */}
+      {activeClusters.length > 0 && (
+        <div className="eoc-flash-bar">
+          <div className="eoc-flash-left">
+            <div className="eoc-flash-icon-box">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+              </svg>
+            </div>
+            <div className="eoc-flash-title-group">
+              <div className="eoc-flash-headline">
+                <span className="eoc-flash-tag">
+                  {activeClusters[0].severityLabel}
+                </span>
+                <span>
+                  {activeClusters[0].victimCount} Active Victims Clustered within 500m
+                </span>
+              </div>
+              <div className="eoc-flash-sub">
+                Spatial Centroid: {activeClusters[0].centroid.lat.toFixed(4)}°, {activeClusters[0].centroid.lng.toFixed(4)}° • Occurred within last 15 minutes
+              </div>
+            </div>
+          </div>
+
+          <div className="eoc-flash-actions">
+            <button
+              className="eoc-audio-toggle-btn"
+              onClick={() => {
+                const next = !audioEnabled;
+                setAudioEnabled(next);
+                if (next) playClusterAlertSound(false);
+              }}
+              title={audioEnabled ? "Mute Siren" : "Unmute Siren"}
+            >
+              {audioEnabled ? "🔊 Sound ON" : "🔇 Sound Muted"}
+            </button>
+
+            <button
+              className="eoc-flash-inspect-btn"
+              onClick={() => {
+                setSelectedCluster(activeClusters[0]);
+                setActiveTab("risk");
+              }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+              Inspect Priority Cluster & Hospital Telemetry &rarr;
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Top View Mode Tabs: Live SOS Requests vs Hospital Capacity vs Risk Analytics */}
       <nav className="eoc-view-tabs">
         <button
           className={`eoc-tab-btn ${activeTab === "incidents" ? "active" : ""}`}
@@ -229,7 +357,7 @@ export default function AuthorityDashboard() {
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
           </svg>
-          Active Incidents
+          Live SOS Requests
           <span className="eoc-tab-badge">{pendingCount} Active</span>
         </button>
 
@@ -240,7 +368,7 @@ export default function AuthorityDashboard() {
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
           </svg>
-          Hospital Capacity Monitor (Read-Only)
+          Hospital Capacity
           <span className="eoc-tab-badge" style={{ color: totalFreeBeds > 0 ? "#34d399" : "#ff8080" }}>
             {totalFreeBeds} Beds Free
           </span>
@@ -258,6 +386,21 @@ export default function AuthorityDashboard() {
               {pendingHospitals.length} Pending
             </span>
           )}
+        </button>
+
+        <button
+          className={`eoc-tab-btn ${activeTab === "risk" ? "active" : ""}`}
+          onClick={() => setActiveTab("risk")}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/>
+            <line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+          Risk Analytics
+          <span className="eoc-tab-badge" style={{ color: "#EF4444" }}>
+            {riskSummary.criticalCount} Critical
+          </span>
         </button>
       </nav>
 
@@ -395,7 +538,7 @@ export default function AuthorityDashboard() {
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
                               <circle cx="12" cy="12" r="10"/>
                             </svg>
-                            {req.type ? req.type.toUpperCase() : "GENERAL SOS"}
+                            {req.category || (req.type ? req.type.toUpperCase() : "GENERAL SOS")}
                           </span>
 
                           <span className={`eoc-status-badge status-${currentStatus}`}>
@@ -457,6 +600,23 @@ export default function AuthorityDashboard() {
                             <div className="eoc-notes-empty">No additional caller notes provided.</div>
                           )}
                         </blockquote>
+
+                        {/* Incident Photo Thumbnail — only rendered when a photo exists */}
+                        {req.photoBase64 && (
+                          <button
+                            type="button"
+                            className="eoc-thumb-btn"
+                            onClick={() => setLightboxSrc(req.photoBase64)}
+                            title="Click to view full-size"
+                          >
+                            <img
+                              src={req.photoBase64}
+                              alt="Incident photo"
+                              className="eoc-thumb-img"
+                            />
+                            <span className="eoc-thumb-expand-icon">⛶</span>
+                          </button>
+                        )}
                       </div>
 
                       {/* Action Controls */}
@@ -810,7 +970,991 @@ export default function AuthorityDashboard() {
             )}
           </div>
         )}
+
+        {/* ========================================================================= */}
+        {/* VIEW 3: RISK ANALYTICS                                                    */}
+        {/* ========================================================================= */}
+        {activeTab === "risk" && (
+          <RiskAnalyticsPanel
+            allZones={allZones}
+            riskSummary={riskSummary}
+            riskSearch={riskSearch}
+            setRiskSearch={setRiskSearch}
+            riskLevelFilter={riskLevelFilter}
+            setRiskLevelFilter={setRiskLevelFilter}
+            riskSortField={riskSortField}
+            setRiskSortField={setRiskSortField}
+            requests={requests}
+            hospitals={verifiedHospitals}
+            activeClusters={activeClusters}
+            selectedCluster={selectedCluster}
+            setSelectedCluster={setSelectedCluster}
+          />
+        )}
       </main>
+
+      {/* Cluster Detail Drawer & Emergency Dispatch Sidebar */}
+      {selectedCluster && (
+        <ClusterDetailDrawer
+          cluster={selectedCluster}
+          hospitals={verifiedHospitals}
+          onClose={() => setSelectedCluster(null)}
+          onDispatch={handleBatchDispatchCluster}
+          isDispatching={dispatchingClusterId === selectedCluster.id}
+        />
+      )}
+
+      {/* ============================================================ */}
+      {/* FULLSCREEN PHOTO LIGHTBOX                                     */}
+      {/* ============================================================ */}
+      {lightboxSrc && (
+        <div
+          className="eoc-lightbox-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Incident photo full screen"
+          onClick={() => setLightboxSrc(null)}
+        >
+          <button
+            type="button"
+            className="eoc-lightbox-close"
+            onClick={() => setLightboxSrc(null)}
+            aria-label="Close lightbox"
+          >
+            ✕
+          </button>
+          <img
+            src={lightboxSrc}
+            alt="Incident media full screen"
+            className="eoc-lightbox-img"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// Map Controller Subcomponent (Handles dynamic flyTo / smooth pan)
+// ============================================================================
+function MapViewController({ center, zoom }) {
+  const map = useMap();
+  useEffect(() => {
+    if (center && Array.isArray(center) && center.length === 2 && center[0] && center[1]) {
+      map.flyTo(center, zoom || 7, {
+        duration: 1.2,
+        easeLinearity: 0.25,
+      });
+    }
+  }, [center, zoom, map]);
+  return null;
+}
+
+// ============================================================================
+// Risk Analytics Panel Component (Interactive Leaflet Map & Top 3 Telemetry)
+// ============================================================================
+function RiskAnalyticsPanel({
+  allZones,
+  riskSummary,
+  riskSearch,
+  setRiskSearch,
+  requests = [],
+  hospitals: _hospitals = [],
+  activeClusters = [],
+  selectedCluster: _selectedCluster,
+  setSelectedCluster,
+}) {
+  const { topZone, criticalCount, averageScore, seasonInfo } = riskSummary;
+  const topThreeZones = useMemo(() => getTopRiskZones(3), []);
+  const activeSeason = seasonInfo || getCurrentSeasonInfo();
+
+  // Map state & selected zone for Risk Factor Breakdown Modal
+  const defaultCenter = useMemo(() => {
+    if (activeClusters.length > 0) {
+      return [activeClusters[0].centroid.lat, activeClusters[0].centroid.lng];
+    }
+    return [topThreeZones[0]?.lat || 28.6139, topThreeZones[0]?.lng || 77.2090];
+  }, [activeClusters, topThreeZones]);
+
+  const [mapCenter, setMapCenter] = useState(defaultCenter);
+  const [mapZoom, setMapZoom] = useState(6);
+  const [selectedZone, setSelectedZone] = useState(null);
+  const [selectedRank, setSelectedRank] = useState(1);
+
+  // Focus a specific top-3 zone on card click
+  const handleSelectTopZone = (zone, rank) => {
+    setSelectedZone(zone);
+    setSelectedRank(rank);
+    setMapCenter([zone.lat, zone.lng]);
+    setMapZoom(7.5);
+  };
+
+  // Focus a cluster on map
+  const handleSelectCluster = (cluster) => {
+    setSelectedCluster(cluster);
+    setMapCenter([cluster.centroid.lat, cluster.centroid.lng]);
+    setMapZoom(13);
+  };
+
+  // Filtered search list for jump navigation
+  const searchResults = useMemo(() => {
+    if (!riskSearch.trim()) return [];
+    const q = riskSearch.toLowerCase();
+    return allZones
+      .filter((z) => z.zoneName.toLowerCase().includes(q))
+      .slice(0, 5);
+  }, [allZones, riskSearch]);
+
+  const handleSelectSearchResult = (zone) => {
+    setSelectedZone(zone);
+    const topIdx = topThreeZones.findIndex((t) => t.id === zone.id);
+    setSelectedRank(topIdx !== -1 ? topIdx + 1 : null);
+    setMapCenter([zone.lat, zone.lng]);
+    setMapZoom(8);
+    setRiskSearch("");
+  };
+
+  // Filter active valid SOS signals
+  const activeSOSRequests = useMemo(() => {
+    return requests.filter(
+      (r) => r.status !== "resolved" && r.location && typeof r.location.lat === "number" && typeof r.location.lng === "number"
+    );
+  }, [requests]);
+
+  return (
+    <div className="risk-panel">
+      {/* ── 1. Summary Metric Cards ─────────────────────────────────────────── */}
+      <div className="risk-summary-grid">
+        {/* Card 1: Highest Risk Area */}
+        <div
+          className="risk-summary-card risk-card-danger"
+          style={{ cursor: "pointer" }}
+          onClick={() => handleSelectTopZone(topZone, 1)}
+          title="Click to locate on telemetry map"
+        >
+          <div className="risk-card-icon" style={{ background: "rgba(239,68,68,0.15)", color: "#EF4444" }}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+          </div>
+          <div className="risk-card-body">
+            <span className="risk-card-label">Highest Risk Area</span>
+            <span className="risk-card-value" style={{ fontSize: "1.15rem" }}>{topZone.zoneName}</span>
+            <span className="risk-card-sub">
+              Active Score: <strong style={{ color: "#EF4444" }}>{topZone.activeScore || topZone.vulnerabilityScore}/100</strong>
+              &nbsp;·&nbsp;{topZone.incidentCount} recorded events
+            </span>
+          </div>
+          <div
+            className="risk-badge"
+            style={{ background: getRiskBg(topZone.riskLevel), color: getRiskColor(topZone.riskLevel), borderColor: getRiskColor(topZone.riskLevel) }}
+          >
+            {topZone.riskLevel}
+          </div>
+        </div>
+
+        {/* Card 2: Critical Danger Zones & Active Clusters */}
+        <div className="risk-summary-card">
+          <div className="risk-card-icon" style={{ background: activeClusters.length > 0 ? "rgba(239,68,68,0.2)" : "rgba(239,68,68,0.12)", color: "#F87171" }}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+              <line x1="12" y1="9" x2="12" y2="13" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+          </div>
+          <div className="risk-card-body">
+            <span className="risk-card-label">Critical Zones & Clusters</span>
+            <div style={{ display: "flex", alignItems: "baseline", gap: "10px" }}>
+              <span className="risk-card-value" style={{ color: criticalCount > 0 ? "#EF4444" : "#34D399" }}>
+                {criticalCount}
+              </span>
+              {activeClusters.length > 0 && (
+                <span style={{ fontSize: "0.82rem", fontWeight: 800, color: "#EF4444", background: "rgba(239,68,68,0.15)", padding: "2px 8px", borderRadius: "10px" }}>
+                  {activeClusters.length} Active Proximity Cluster{activeClusters.length > 1 ? "s" : ""}
+                </span>
+              )}
+            </div>
+            <span className="risk-card-sub">Active vulnerability score &gt; 80</span>
+          </div>
+        </div>
+
+        {/* Card 3: Avg Regional Risk Score & Seasonal Tag */}
+        <div className="risk-summary-card">
+          <div className="risk-card-icon" style={{ background: "rgba(59,130,246,0.12)", color: "#60A5FA" }}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+            </svg>
+          </div>
+          <div className="risk-card-body">
+            <span className="risk-card-label">Avg Regional Risk Score</span>
+            <span
+              className="risk-card-value"
+              style={{ color: averageScore > 60 ? "#F97316" : averageScore > 40 ? "#EAB308" : "#34D399" }}
+            >
+              {averageScore}
+              <span style={{ fontSize: "1rem", fontWeight: 600, color: "var(--eoc-text-muted)" }}>/100</span>
+            </span>
+            <span className="risk-card-sub">
+              Season: <strong style={{ color: activeSeason.themeColor }}>{activeSeason.seasonName} ({activeSeason.currentMonth})</strong>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── 2. Interactive Map Section with Top 3 Sidebar ──────────────────── */}
+      <div className="risk-map-section">
+        <div className="risk-map-header">
+          <div className="risk-map-title-group">
+            <h3 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 800, color: "#ffffff" }}>
+              Regional Risk & Live SOS Proximity Telemetry Map
+            </h3>
+            <div className="risk-radar-beacon">
+              <span className="radar-dot" />
+              <span>{activeSeason.badgeText}</span>
+            </div>
+          </div>
+
+          {/* Quick Search Jump Input */}
+          <div style={{ position: "relative", minWidth: "260px" }}>
+            <div className="risk-search-box" style={{ padding: "7px 12px" }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--eoc-text-muted)" }}>
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <input
+                type="text"
+                className="risk-search-input"
+                placeholder="Search & locate any region..."
+                value={riskSearch}
+                onChange={(e) => setRiskSearch(e.target.value)}
+              />
+              {riskSearch && (
+                <button className="risk-clear-btn" onClick={() => setRiskSearch("")}>✕</button>
+              )}
+            </div>
+
+            {/* Quick search autocomplete dropdown */}
+            {searchResults.length > 0 && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: "100%",
+                  left: 0,
+                  right: 0,
+                  marginTop: "6px",
+                  background: "#161B22",
+                  border: "1px solid var(--eoc-border)",
+                  borderRadius: "10px",
+                  zIndex: 1100,
+                  boxShadow: "0 10px 30px rgba(0,0,0,0.6)",
+                  overflow: "hidden",
+                }}
+              >
+                {searchResults.map((sr) => (
+                  <div
+                    key={sr.id}
+                    onClick={() => handleSelectSearchResult(sr)}
+                    style={{
+                      padding: "10px 14px",
+                      cursor: "pointer",
+                      borderBottom: "1px solid rgba(255,255,255,0.05)",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.06)")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                  >
+                    <span style={{ fontSize: "0.88rem", fontWeight: 600, color: "#ffffff" }}>{sr.zoneName}</span>
+                    <span style={{ fontSize: "0.75rem", color: getRiskColor(sr.riskLevel), fontWeight: 700 }}>
+                      {sr.activeScore || sr.vulnerabilityScore}/100 ({sr.riskLevel})
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Map Grid: Top 3 Cards Sidebar + Interactive Leaflet Map */}
+        <div className="risk-map-grid">
+          {/* Left Column: Top 3 Hazard Overlay Cards & Active Clusters */}
+          <div className="risk-top3-sidebar">
+            {/* Active Proximity Clusters Header if present */}
+            {activeClusters.length > 0 && (
+              <div style={{ marginBottom: "6px" }}>
+                <span style={{ fontSize: "0.75rem", fontWeight: 800, textTransform: "uppercase", color: "#EF4444", letterSpacing: "0.05em", display: "block", marginBottom: "8px" }}>
+                  🚨 Active High-Priority Clusters ({activeClusters.length})
+                </span>
+                {activeClusters.map((cluster) => (
+                  <div
+                    key={cluster.id}
+                    className="risk-top-card"
+                    style={{
+                      borderLeft: `4px solid ${cluster.severityColor}`,
+                      background: cluster.severityBg,
+                      cursor: "pointer",
+                      marginBottom: "8px",
+                    }}
+                    onClick={() => handleSelectCluster(cluster)}
+                    title="Click to zoom in and open dispatch drawer"
+                  >
+                    <div className="risk-top-card-header">
+                      <span
+                        className="risk-rank-badge"
+                        style={{ background: cluster.severityColor, color: "#ffffff", border: "none" }}
+                      >
+                        {cluster.severityLabel}
+                      </span>
+                      <span className="risk-top-card-coords">
+                        Radius: {cluster.radiusMeters}m
+                      </span>
+                    </div>
+                    <h4 className="risk-top-card-name" style={{ color: "#ffffff" }}>
+                      ⚠️ {cluster.victimCount} Victims Clustered
+                    </h4>
+                    <div style={{ fontSize: "0.78rem", color: "var(--eoc-text-secondary)", display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "4px" }}>
+                      <span>Centroid: {cluster.centroid.lat.toFixed(3)}°, {cluster.centroid.lng.toFixed(3)}°</span>
+                      <span style={{ color: "#38bdf8", fontWeight: 700 }}>Inspect & Dispatch &rarr;</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <span style={{ fontSize: "0.75rem", fontWeight: 800, textTransform: "uppercase", color: "var(--eoc-text-muted)", letterSpacing: "0.05em", display: "block", marginBottom: "4px" }}>
+              Top 3 Seasonal Hazard Zones
+            </span>
+
+            {topThreeZones.map((zone, idx) => {
+              const rank = idx + 1;
+              const rankStyle = TOP_RANK_STYLES[rank] || TOP_RANK_STYLES[3];
+              const isSelected = selectedZone?.id === zone.id;
+              const score = zone.activeScore || zone.vulnerabilityScore;
+
+              return (
+                <div
+                  key={zone.id}
+                  className={`risk-top-card card-rank-${rank} ${isSelected ? "selected" : ""}`}
+                  onClick={() => handleSelectTopZone(zone, rank)}
+                  title={`Click to center on ${zone.zoneName}`}
+                >
+                  <div className="risk-top-card-header">
+                    <span
+                      className="risk-rank-badge"
+                      style={{ background: rankStyle.bg, color: rankStyle.color, border: `1px solid ${rankStyle.color}` }}
+                    >
+                      {rankStyle.badgeLabel}
+                    </span>
+                    <span className="risk-top-card-coords">
+                      {zone.lat.toFixed(2)}°, {zone.lng.toFixed(2)}°
+                    </span>
+                  </div>
+
+                  <h4 className="risk-top-card-name">{zone.zoneName}</h4>
+
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.75rem", color: "var(--eoc-text-muted)" }}>
+                    <span>Active Season:</span>
+                    <span style={{ color: activeSeason.themeColor, fontWeight: 700 }}>{zone.activeSeason || activeSeason.seasonName}</span>
+                  </div>
+
+                  <div className="risk-top-card-stats">
+                    <div className="risk-stat-item">
+                      <span className="risk-stat-val" style={{ color: rankStyle.color }}>
+                        {score}
+                        <span style={{ fontSize: "0.75rem", color: "var(--eoc-text-muted)" }}>/100</span>
+                      </span>
+                      <span className="risk-stat-lbl">Active Score</span>
+                    </div>
+
+                    <div className="risk-stat-item">
+                      <span className="risk-stat-val" style={{ color: "#f0f6fc" }}>
+                        {zone.incidentCount}
+                      </span>
+                      <span className="risk-stat-lbl">Events</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="risk-inspect-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSelectTopZone(zone, rank);
+                      }}
+                    >
+                      Breakdown
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="9 18 15 12 9 6" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+
+            <div style={{ padding: "12px 14px", background: "rgba(255,255,255,0.03)", borderRadius: "10px", fontSize: "0.78rem", color: "var(--eoc-text-muted)", lineHeight: 1.4 }}>
+              ⚡ <strong>Time-Based Telemetry:</strong> Vulnerability scores are dynamically adjusted for the active <strong>{activeSeason.seasonName}</strong> season ({activeSeason.monthsSpan}).
+            </div>
+          </div>
+
+          {/* Right Column: Interactive Leaflet Map Container */}
+          <div className="risk-map-wrapper">
+            <MapContainer
+              center={defaultCenter}
+              zoom={mapZoom}
+              scrollWheelZoom={true}
+              style={{ width: "100%", height: "100%", minHeight: "540px" }}
+            >
+              {/* Map Controller for programmatic flyTo transitions */}
+              <MapViewController center={mapCenter} zoom={mapZoom} />
+
+              {/* OpenStreetMap Tile Layer with dark theme filter */}
+              <TileLayer
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                className="dark-tiles"
+              />
+
+              {/* 1. Circle Markers for Top 3 Highest-Risk Zones */}
+              {topThreeZones.map((zone, idx) => {
+                const rank = idx + 1;
+                const rankStyle = TOP_RANK_STYLES[rank] || TOP_RANK_STYLES[3];
+                const score = zone.activeScore || zone.vulnerabilityScore;
+                const radius = Math.max(18, Math.round(score / 2.5));
+
+                return (
+                  <CircleMarker
+                    key={zone.id}
+                    center={[zone.lat, zone.lng]}
+                    radius={radius}
+                    pathOptions={{
+                      color: rankStyle.color,
+                      fillColor: rankStyle.color,
+                      fillOpacity: 0.38,
+                      weight: 3.5,
+                    }}
+                    eventHandlers={{
+                      click: () => {
+                        handleSelectTopZone(zone, rank);
+                      },
+                    }}
+                  >
+                    <Popup className="risk-popup">
+                      <div className="risk-popup-content">
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px" }}>
+                          <span
+                            className="risk-rank-badge"
+                            style={{ background: rankStyle.bg, color: rankStyle.color, border: `1px solid ${rankStyle.color}` }}
+                          >
+                            Rank #{rank} • {zone.activeSeason || activeSeason.seasonName}
+                          </span>
+                          <span style={{ fontSize: "0.75rem", color: "#58A6FF", fontFamily: "JetBrains Mono" }}>
+                            {zone.lat.toFixed(2)}°, {zone.lng.toFixed(2)}°
+                          </span>
+                        </div>
+                        <h4 className="risk-popup-title">{zone.zoneName}</h4>
+                        <div style={{ fontSize: "0.82rem", color: "#f0f6fc" }}>
+                          Active Seasonal Score: <strong style={{ color: rankStyle.color }}>{score}/100</strong>
+                        </div>
+                        <div style={{ fontSize: "0.78rem", color: "var(--eoc-text-muted)" }}>
+                          Recorded Historical Disasters: <strong>{zone.incidentCount}</strong>
+                        </div>
+                        <button
+                          type="button"
+                          className="risk-inspect-btn"
+                          style={{ marginTop: "4px", justifyContent: "center" }}
+                          onClick={() => setSelectedZone(zone)}
+                        >
+                          View Seasonal Risk Factor Breakdown &rarr;
+                        </button>
+                      </div>
+                    </Popup>
+                  </CircleMarker>
+                );
+              })}
+
+              {/* 2. Individual Active SOS Request Signals */}
+              {activeSOSRequests.map((req) => {
+                const isDispatched = req.status === "dispatched" || req.status === "in_progress";
+                const dotColor = isDispatched ? "#F59E0B" : "#EF4444";
+                return (
+                  <CircleMarker
+                    key={req.id}
+                    center={[req.location.lat, req.location.lng]}
+                    radius={6}
+                    pathOptions={{
+                      color: "#ffffff",
+                      fillColor: dotColor,
+                      fillOpacity: 0.95,
+                      weight: 1.5,
+                    }}
+                  >
+                    <Popup className="risk-popup">
+                      <div className="risk-popup-content">
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span style={{ fontSize: "0.75rem", fontWeight: 800, color: dotColor, textTransform: "uppercase" }}>
+                            🚨 {req.category || req.type || "General"} SOS
+                          </span>
+                          <span style={{ fontSize: "0.72rem", color: "var(--eoc-text-muted)" }}>
+                            {formatTimeAgo(req.createdAt)}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: "0.82rem", color: "#ffffff", marginTop: "2px" }}>
+                          Status: <strong style={{ textTransform: "capitalize", color: dotColor }}>{req.status || "pending"}</strong>
+                        </div>
+                        {req.note && (
+                          <div style={{ fontSize: "0.78rem", color: "#c9d1d9", fontStyle: "italic", marginTop: "4px" }}>
+                            "{req.note}"
+                          </div>
+                        )}
+                        <div style={{ fontSize: "0.72rem", color: "#58a6ff", fontFamily: "JetBrains Mono", marginTop: "4px" }}>
+                          GPS: {req.location.lat.toFixed(4)}°, {req.location.lng.toFixed(4)}°
+                        </div>
+                        {req.hasDetails && req.photoBase64 && (
+                          <button
+                            type="button"
+                            style={{
+                              marginTop: "8px",
+                              padding: 0,
+                              border: "none",
+                              background: "none",
+                              cursor: "pointer",
+                              borderRadius: "8px",
+                              overflow: "hidden",
+                              display: "block",
+                              width: "100%",
+                            }}
+                            onClick={() => setLightboxSrc(req.photoBase64)}
+                            title="Click to expand photo"
+                          >
+                            <img
+                              src={req.photoBase64}
+                              alt="Incident media"
+                              style={{ width: "100%", height: "90px", objectFit: "cover", borderRadius: "8px", display: "block" }}
+                            />
+                            <div style={{ fontSize: "0.7rem", color: "#58a6ff", textAlign: "center", marginTop: "4px" }}>Tap to expand ⛶</div>
+                          </button>
+                        )}
+                      </div>
+                    </Popup>
+                  </CircleMarker>
+                );
+              })}
+
+              {/* 3. Proximity Clusters with Pulsing Radius Ring & Tooltip */}
+              {activeClusters.map((cluster) => (
+                <div key={cluster.id}>
+                  {/* Affected Proximity Radius Circle (500m area) */}
+                  <Circle
+                    center={[cluster.centroid.lat, cluster.centroid.lng]}
+                    radius={cluster.radiusMeters}
+                    pathOptions={{
+                      color: cluster.severityColor,
+                      fillColor: cluster.severityColor,
+                      fillOpacity: 0.18,
+                      weight: 3,
+                      dashArray: "6, 6",
+                      className: "cluster-pulse-ring",
+                    }}
+                    eventHandlers={{
+                      click: () => {
+                        handleSelectCluster(cluster);
+                      },
+                    }}
+                  />
+
+                  {/* Cluster Centroid Marker & Urgency Tooltip */}
+                  <CircleMarker
+                    center={[cluster.centroid.lat, cluster.centroid.lng]}
+                    radius={14}
+                    pathOptions={{
+                      color: "#ffffff",
+                      fillColor: cluster.severityColor,
+                      fillOpacity: 1,
+                      weight: 2.5,
+                    }}
+                    eventHandlers={{
+                      click: () => {
+                        handleSelectCluster(cluster);
+                      },
+                    }}
+                  >
+                    <Tooltip permanent direction="top" className="cluster-marker-label">
+                      ⚠️ {cluster.victimCount} VICTIMS ({cluster.severityLabel})
+                    </Tooltip>
+                  </CircleMarker>
+                </div>
+              ))}
+            </MapContainer>
+
+            {/* Floating Map Legend */}
+            <div className="risk-map-legend">
+              <span className="legend-title">Hazard & Telemetry Legend</span>
+              <div className="legend-item">
+                <span className="legend-dot" style={{ background: "#D32F2F", boxShadow: "0 0 8px #D32F2F" }} />
+                <span>#1 Critical ({topThreeZones[0]?.activeScore || 98} Score)</span>
+              </div>
+              <div className="legend-item">
+                <span className="legend-dot" style={{ background: "#F57C00", boxShadow: "0 0 8px #F57C00" }} />
+                <span>#2 High ({topThreeZones[1]?.activeScore || 95} Score)</span>
+              </div>
+              <div className="legend-item">
+                <span className="legend-dot" style={{ background: "#FBC02D", boxShadow: "0 0 8px #FBC02D" }} />
+                <span>#3 Elevated ({topThreeZones[2]?.activeScore || 81} Score)</span>
+              </div>
+              {activeClusters.length > 0 && (
+                <div className="legend-item" style={{ borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: "4px" }}>
+                  <span className="legend-dot" style={{ background: "#D32F2F", border: "1px dashed #ffffff" }} />
+                  <span style={{ color: "#EF4444", fontWeight: 700 }}>Active Cluster (500m Radius)</span>
+                </div>
+              )}
+              <div className="legend-item">
+                <span className="legend-dot" style={{ width: "8px", height: "8px", background: "#EF4444", border: "1px solid #ffffff" }} />
+                <span>Individual SOS Signal</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── 3. Seasonal Risk Factor Breakdown Detail Modal ──────────────────── */}
+      {selectedZone && (
+        <div className="risk-modal-overlay" onClick={() => setSelectedZone(null)}>
+          <div className="risk-modal-card" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+            {/* Modal Header */}
+            <div className="risk-modal-header">
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+                  <span
+                    className="risk-rank-badge"
+                    style={{
+                      background: getRiskBg(selectedZone.riskLevel),
+                      color: getRiskColor(selectedZone.riskLevel),
+                      border: `1px solid ${getRiskColor(selectedZone.riskLevel)}`,
+                    }}
+                  >
+                    {selectedRank ? `Rank #${selectedRank} • ` : ""}
+                    {selectedZone.activeSeason || activeSeason.seasonName} Active
+                  </span>
+                  <span style={{ fontFamily: "JetBrains Mono", fontSize: "0.82rem", color: "#58A6FF" }}>
+                    GPS: {selectedZone.lat.toFixed(4)}°, {selectedZone.lng.toFixed(4)}°
+                  </span>
+                </div>
+                <h2 style={{ fontSize: "1.45rem", fontWeight: 800, color: "#ffffff", margin: 0 }}>
+                  {selectedZone.zoneName}
+                </h2>
+                <span style={{ fontSize: "0.82rem", color: "var(--eoc-text-muted)" }}>
+                  Seasonal Risk Factor Breakdown • {activeSeason.seasonName} ({activeSeason.monthsSpan})
+                </span>
+              </div>
+
+              <button
+                className="risk-modal-close-btn"
+                onClick={() => setSelectedZone(null)}
+                title="Close Breakdown"
+                aria-label="Close modal"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Score & Telemetry Metric Box */}
+            <div className="risk-modal-score-box">
+              <div>
+                <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "var(--eoc-text-muted)", textTransform: "uppercase" }}>
+                  Calculated Vulnerability Score
+                </span>
+                <div style={{ display: "flex", alignItems: "baseline", gap: "4px", marginTop: "2px" }}>
+                  <span style={{ fontFamily: "JetBrains Mono", fontSize: "2.1rem", fontWeight: 900, color: getRiskColor(selectedZone.riskLevel) }}>
+                    {selectedZone.activeScore || selectedZone.vulnerabilityScore}
+                  </span>
+                  <span style={{ fontSize: "0.95rem", color: "var(--eoc-text-muted)", fontWeight: 600 }}>/ 100</span>
+                </div>
+              </div>
+
+              <div style={{ textAlign: "right" }}>
+                <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "var(--eoc-text-muted)", textTransform: "uppercase" }}>
+                  Historical Disasters
+                </span>
+                <div style={{ fontFamily: "JetBrains Mono", fontSize: "1.4rem", fontWeight: 800, color: "#ffffff", marginTop: "2px" }}>
+                  {selectedZone.incidentCount} Events
+                </div>
+              </div>
+            </div>
+
+            {/* Disaster Types Tags */}
+            {selectedZone.disasterTypes && selectedZone.disasterTypes.length > 0 && (
+              <div>
+                <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "var(--eoc-text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: "8px" }}>
+                  Recorded Hazard Typologies
+                </span>
+                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                  {selectedZone.disasterTypes.map((t) => (
+                    <span
+                      key={t}
+                      style={{
+                        padding: "4px 10px",
+                        background: "rgba(255,255,255,0.06)",
+                        border: "1px solid var(--eoc-border)",
+                        borderRadius: "14px",
+                        fontSize: "0.8rem",
+                        fontWeight: 600,
+                        color: "#f0f6fc",
+                      }}
+                    >
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Dynamic Seasonal Risk Factors */}
+            <div>
+              <span style={{ fontSize: "0.82rem", fontWeight: 800, color: "#EF5350", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: "10px" }}>
+                ⚠️ Active Seasonal Risk Factors ({activeSeason.seasonName})
+              </span>
+              <ul className="risk-factors-list">
+                {selectedZone.riskFactors?.map((factor, i) => (
+                  <li key={i} className="risk-factor-item">
+                    <span className="risk-factor-icon">▪</span>
+                    <span>{factor}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Recommended Emergency Action Protocol */}
+            <div className="risk-protocol-box">
+              <h4 className="risk-protocol-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                </svg>
+                Recommended Emergency Action Protocol ({activeSeason.seasonName})
+              </h4>
+              <ol className="risk-protocol-list">
+                {selectedZone.actionProtocol?.map((action, i) => (
+                  <li key={i}>{action}</li>
+                ))}
+              </ol>
+            </div>
+
+            {/* Modal Actions */}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "4px" }}>
+              <button
+                className="eoc-btn-resolved"
+                style={{ padding: "10px 20px" }}
+                onClick={() => setSelectedZone(null)}
+              >
+                Acknowledge & Close Protocol
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// Cluster Detail Drawer & Emergency Dispatch Component
+// ============================================================================
+function ClusterDetailDrawer({
+  cluster,
+  hospitals = [],
+  onClose,
+  onDispatch,
+  isDispatching,
+}) {
+  const nearestHospital = useMemo(() => {
+    return findNearestHospital(cluster.centroid, hospitals);
+  }, [cluster.centroid, hospitals]);
+
+  const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${cluster.centroid.lat},${cluster.centroid.lng}`;
+
+  return (
+    <div className="cluster-drawer-overlay" onClick={onClose}>
+      <div className="cluster-drawer" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+        {/* Drawer Header */}
+        <div className="cluster-drawer-header">
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+              <span
+                className="cluster-severity-pill"
+                style={{
+                  background: cluster.severityBg,
+                  color: cluster.severityColor,
+                  border: `1px solid ${cluster.severityColor}`,
+                }}
+              >
+                🚨 {cluster.severityLabel}
+              </span>
+            </div>
+            <h2 className="cluster-drawer-title">
+              Mass Emergency Cluster
+            </h2>
+            <div style={{ fontSize: "0.82rem", color: "var(--eoc-text-muted)", marginTop: "3px" }}>
+              Centroid: {cluster.centroid.lat.toFixed(4)}°, {cluster.centroid.lng.toFixed(4)}°
+            </div>
+          </div>
+
+          <button
+            className="risk-modal-close-btn"
+            onClick={onClose}
+            title="Close Drawer"
+            aria-label="Close cluster drawer"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Cluster Metric Stats */}
+        <div className="cluster-stat-grid">
+          <div className="cluster-stat-box">
+            <span className="cluster-stat-title">Clustered Victims</span>
+            <span className="cluster-stat-number" style={{ color: cluster.severityColor }}>
+              {cluster.victimCount}
+            </span>
+          </div>
+
+          <div className="cluster-stat-box">
+            <span className="cluster-stat-title">Proximity Radius</span>
+            <span className="cluster-stat-number" style={{ color: "#38bdf8" }}>
+              {cluster.radiusMeters}m
+            </span>
+          </div>
+        </div>
+
+        {/* Nearest Available Hospital Card */}
+        <div className="cluster-hospital-card">
+          <div className="cluster-hospital-header">
+            <span className="cluster-hospital-badge">
+              Nearest Trauma Facility
+            </span>
+            {nearestHospital && (
+              <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "#38bdf8" }}>
+                {nearestHospital.distanceKm} km away
+              </span>
+            )}
+          </div>
+
+          {nearestHospital ? (
+            <>
+              <h4 className="cluster-hospital-name">
+                {nearestHospital.hospitalName}
+              </h4>
+              <div className="cluster-hospital-stats">
+                <span
+                  className="cluster-hosp-pill"
+                  style={{
+                    background: nearestHospital.availableBeds > 0 ? "rgba(52, 211, 153, 0.15)" : "rgba(239, 68, 68, 0.15)",
+                    color: nearestHospital.availableBeds > 0 ? "#34D399" : "#EF4444",
+                    border: `1px solid ${nearestHospital.availableBeds > 0 ? "#34D399" : "#EF4444"}`,
+                  }}
+                >
+                  🛏️ {nearestHospital.availableBeds} Emergency Beds Open
+                </span>
+                <span
+                  className="cluster-hosp-pill"
+                  style={{
+                    background: "rgba(56, 189, 248, 0.15)",
+                    color: "#38BDF8",
+                    border: "1px solid #38BDF8",
+                  }}
+                >
+                  👨‍⚕️ {nearestHospital.staffCount} Staff on Duty
+                </span>
+              </div>
+            </>
+          ) : (
+            <div style={{ fontSize: "0.85rem", color: "var(--eoc-text-muted)" }}>
+              No registered hospital found within active telemetry range.
+            </div>
+          )}
+
+          <a
+            href={mapsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              fontSize: "0.8rem",
+              color: "#58A6FF",
+              textDecoration: "none",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "4px",
+              marginTop: "4px",
+            }}
+          >
+            Open GPS Dispatch Coordinates in Maps &rarr;
+          </a>
+        </div>
+
+        {/* Clustered Victims List */}
+        <div className="cluster-victims-section">
+          <h4 className="cluster-victims-title">
+            Clustered Emergency Calls ({cluster.requests.length})
+          </h4>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            {cluster.requests.map((req, idx) => (
+              <div key={req.id || idx} className="cluster-victim-card">
+                <div className="cluster-victim-top">
+                  <span
+                    className="cluster-victim-type"
+                    style={{
+                      background: "rgba(239, 68, 68, 0.18)",
+                      color: "#EF4444",
+                      border: "1px solid rgba(239, 68, 68, 0.4)",
+                    }}
+                  >
+                    {req.type || "Medical / SOS"}
+                  </span>
+                  <span className="cluster-victim-time">
+                    {formatTimeAgo(req.createdAt)}
+                  </span>
+                </div>
+
+                {req.notes && (
+                  <div className="cluster-victim-notes">
+                    "{req.notes}"
+                  </div>
+                )}
+
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.75rem", color: "var(--eoc-text-muted)", marginTop: "2px" }}>
+                  <span>Status: <strong style={{ color: req.status === "dispatched" ? "#F59E0B" : "#EF4444" }}>{req.status || "pending"}</strong></span>
+                  <span style={{ fontFamily: "JetBrains Mono" }}>
+                    {req.location?.lat?.toFixed(4)}°, {req.location?.lng?.toFixed(4)}°
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Dispatch Action Footer */}
+        <div className="cluster-drawer-footer">
+          <button
+            className="cluster-dispatch-btn"
+            onClick={() => onDispatch(cluster)}
+            disabled={isDispatching}
+          >
+            {isDispatching ? (
+              <span>Dispatching Units to Cluster...</span>
+            ) : (
+              <>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                </svg>
+                Dispatch Emergency Unit to Cluster ({cluster.victimCount} Victims)
+              </>
+            )}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

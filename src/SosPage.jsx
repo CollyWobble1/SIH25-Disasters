@@ -1,16 +1,36 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { Geolocation } from "@capacitor/geolocation";
 import { db } from "../firebase";
+import { compressImageToBase64 } from "./utils/imageCompressor";
 import "./SosPage.css";
+
+const INCIDENT_CATEGORIES = [
+  { id: "Medical", label: "Medical", icon: "🚑" },
+  { id: "Fire", label: "Fire", icon: "🔥" },
+  { id: "Flood", label: "Flood", icon: "🌊" },
+  { id: "Accident", label: "Accident", icon: "🚗" },
+  { id: "Trapped", label: "Trapped", icon: "⚠️" },
+  { id: "Other", label: "Other", icon: "🆘" },
+];
 
 export default function SosPage() {
   const navigate = useNavigate();
+  const fileInputRef = useRef(null);
+
+  // Form State
   const [type, setType] = useState("medical");
   const [note, setNote] = useState("");
-  const [status, setStatus] = useState("idle"); // 'idle' | 'sending' | 'sent' | 'error'
+  const [status, setStatus] = useState("idle"); // 'idle' | 'sending' | 'detail_modal' | 'updating_details' | 'sent' | 'error'
   const [errorMessage, setErrorMessage] = useState("");
+
+  // Post-SOS Detail Modal State
+  const [createdRequestId, setCreatedRequestId] = useState(null);
+  const [detailCategory, setDetailCategory] = useState("Medical");
+  const [detailNote, setDetailNote] = useState("");
+  const [selectedPhotoFile, setSelectedPhotoFile] = useState(null);
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState(null);
 
   // Acquire coordinates using @capacitor/geolocation (native) with browser fallback
   const getCoordinates = async () => {
@@ -54,6 +74,7 @@ export default function SosPage() {
     });
   };
 
+  // 1. Initial SOS Broadcast
   const handleSubmit = async () => {
     setStatus("sending");
     setErrorMessage("");
@@ -61,15 +82,20 @@ export default function SosPage() {
     try {
       const coords = await getCoordinates();
 
-      await addDoc(collection(db, "sos_requests"), {
+      const docRef = await addDoc(collection(db, "sos_requests"), {
         type,
+        category: type.charAt(0).toUpperCase() + type.slice(1),
         note: note.trim(),
         location: coords ? { lat: coords.latitude, lng: coords.longitude } : null,
         status: "pending",
+        hasDetails: false,
         createdAt: serverTimestamp(),
       });
 
-      setStatus("sent");
+      setCreatedRequestId(docRef.id);
+      setDetailCategory(type.charAt(0).toUpperCase() + type.slice(1));
+      setDetailNote(note.trim());
+      setStatus("detail_modal");
     } catch (err) {
       console.error("SOS Transmission Error:", err);
       setErrorMessage(err.message || "Failed to send emergency transmission. Please try again.");
@@ -77,6 +103,82 @@ export default function SosPage() {
     }
   };
 
+  // Handle Photo Selection
+  const handlePhotoChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedPhotoFile(file);
+      setPhotoPreviewUrl(URL.createObjectURL(file));
+    }
+  };
+
+  // Remove Photo Selection
+  const handleRemovePhoto = () => {
+    setSelectedPhotoFile(null);
+    if (photoPreviewUrl) {
+      URL.revokeObjectURL(photoPreviewUrl);
+      setPhotoPreviewUrl(null);
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  // 2. Submit Additional Post-SOS Details (Base64 compressed photo + category + notes)
+  const handleSaveDetails = async () => {
+    if (!createdRequestId) {
+      setStatus("sent");
+      return;
+    }
+
+    try {
+      setStatus("updating_details");
+
+      let photoBase64 = null;
+      if (selectedPhotoFile) {
+        photoBase64 = await compressImageToBase64(selectedPhotoFile);
+      }
+
+      const updateData = {
+        category: detailCategory,
+        type: detailCategory.toLowerCase(),
+        note: detailNote.trim(),
+        hasDetails: true,
+        updatedAt: serverTimestamp(),
+      };
+
+      if (photoBase64) {
+        updateData.photoBase64 = photoBase64;
+      }
+
+      const reqDocRef = doc(db, "sos_requests", createdRequestId);
+      await updateDoc(reqDocRef, updateData);
+
+      setStatus("sent");
+    } catch (err) {
+      console.error("Error saving SOS secondary details:", err);
+      // Even if saving photo fails, SOS is already transmitted
+      setStatus("sent");
+    }
+  };
+
+  // Skip Secondary Details
+  const handleSkipDetails = () => {
+    setStatus("sent");
+  };
+
+  // Reset entire form to send another alert
+  const handleResetForm = () => {
+    setStatus("idle");
+    setNote("");
+    setDetailNote("");
+    setSelectedPhotoFile(null);
+    setPhotoPreviewUrl(null);
+    setCreatedRequestId(null);
+    setErrorMessage("");
+  };
+
+  // ── Confirmation Screen ──────────────────────────────────────────
   if (status === "sent") {
     return (
       <div className="sos-page-wrapper">
@@ -97,10 +199,7 @@ export default function SosPage() {
             <div className="sent-actions">
               <button
                 className="role-btn-grey"
-                onClick={() => {
-                  setStatus("idle");
-                  setNote("");
-                }}
+                onClick={handleResetForm}
               >
                 Send Additional Update
               </button>
@@ -222,6 +321,10 @@ export default function SosPage() {
                   <line x1="12" y1="18" x2="12" y2="22"></line>
                   <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
                   <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
+                  <line x1="2" y1="12" x2="6" y2="12"></line>
+                  <line x1="18" y1="12" x2="22" y2="12"></line>
+                  <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line>
+                  <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
                 </svg>
                 Transmitting SOS...
               </>
@@ -236,6 +339,134 @@ export default function SosPage() {
           </button>
         </div>
       </div>
+
+      {/* ── Post-SOS Secondary Detail Modal ────────────────────────────── */}
+      {(status === "detail_modal" || status === "updating_details") && (
+        <div className="sos-modal-overlay">
+          <div className="sos-modal-card" role="dialog" aria-modal="true">
+            <div className="sos-modal-header">
+              <div className="sos-modal-icon-wrap">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2ea043" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                  <polyline points="22 4 12 14.01 9 11.01" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="sos-modal-title">Help is on the way!</h3>
+                <p className="sos-modal-subtitle">Want to attach quick photos or specific details for responders?</p>
+              </div>
+            </div>
+
+            {/* Category Chips */}
+            <div>
+              <label className="sos-label">Specific Incident Type</label>
+              <div className="sos-chip-grid">
+                {INCIDENT_CATEGORIES.map((cat) => (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    className={`sos-chip ${detailCategory === cat.id ? "active" : ""}`}
+                    onClick={() => setDetailCategory(cat.id)}
+                  >
+                    <span style={{ fontSize: "1.2rem" }}>{cat.icon}</span>
+                    <span>{cat.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Detailed Note */}
+            <div>
+              <label className="sos-label">Additional Transmission Notes</label>
+              <textarea
+                className="sos-textarea"
+                placeholder="Describe current situation, visible landmarks, number of victims..."
+                value={detailNote}
+                onChange={(e) => setDetailNote(e.target.value)}
+                rows={2}
+              />
+            </div>
+
+            {/* Photo Capture / Upload */}
+            <div>
+              <label className="sos-label">Attach Incident Photo (Auto-compressed)</label>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                style={{ display: "none" }}
+                onChange={handlePhotoChange}
+              />
+
+              {!photoPreviewUrl ? (
+                <button
+                  type="button"
+                  className="sos-photo-upload-label"
+                  style={{ width: "100%", background: "transparent", font: "inherit" }}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                    <circle cx="8.5" cy="8.5" r="1.5" />
+                    <polyline points="21 15 16 10 5 21" />
+                  </svg>
+                  <span>Take photo or upload from gallery</span>
+                </button>
+              ) : (
+                <div className="sos-photo-preview-wrap">
+                  <img src={photoPreviewUrl} alt="Preview" className="sos-photo-preview" />
+                  <button
+                    type="button"
+                    className="sos-photo-remove-btn"
+                    onClick={handleRemovePhoto}
+                  >
+                    ✕ Remove Photo
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="sos-modal-actions">
+              <button
+                type="button"
+                className="sos-modal-submit-btn"
+                onClick={handleSaveDetails}
+                disabled={status === "updating_details"}
+              >
+                {status === "updating_details" ? (
+                  <>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="spin-loader">
+                      <line x1="12" y1="2" x2="12" y2="6"></line>
+                      <line x1="12" y1="18" x2="12" y2="22"></line>
+                      <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
+                      <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
+                    </svg>
+                    Uploading & Compressing...
+                  </>
+                ) : (
+                  <>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                    Save & Submit Details
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                className="sos-modal-skip-btn"
+                onClick={handleSkipDetails}
+                disabled={status === "updating_details"}
+              >
+                Skip & Proceed
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
