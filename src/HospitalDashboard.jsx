@@ -156,8 +156,8 @@ export default function HospitalDashboard() {
     setSetupError("");
 
     const name = setupName.trim();
-    const beds = parseInt(setupTotalBeds, 10);
-    const staff = parseInt(setupStaff, 10);
+    const beds = Number(setupTotalBeds) || 0;
+    const staff = Number(setupStaff) || 0;
     const lat = parseFloat(setupLat);
     const lng = parseFloat(setupLng);
 
@@ -167,28 +167,54 @@ export default function HospitalDashboard() {
     if (isNaN(lat) || isNaN(lng)) return setSetupError("Please provide a valid GPS location.");
 
     setSetupSaving(true);
+
+    // Fallback document ID if auth.currentUser is null during guest registration tests
+    const targetDocId = currentUser?.uid || auth.currentUser?.uid || `guest_hospital_${Date.now()}`;
+
+    const hospitalPayload = {
+      adminUid: targetDocId,
+      ownerUid: targetDocId,
+      hospitalName: name,
+      location: { lat, lng },
+      lat: Number(lat),
+      lng: Number(lng),
+      latitude: Number(lat),
+      longitude: Number(lng),
+      totalBeds: Number(beds),
+      occupiedBeds: 0,
+      availableBeds: Number(beds),
+      staffCount: Number(staff),
+      isMaxOccupied: false,
+      isProfileComplete: true,
+      isVerified: false,
+      updatedAt: serverTimestamp(),
+    };
+
     try {
-      await setDoc(
-        doc(db, "hospitals", currentUser.uid),
-        {
-          adminUid: currentUser.uid,
-          hospitalName: name,
-          location: { lat, lng },
-          totalBeds: beds,
-          occupiedBeds: 0,
-          availableBeds: beds,
-          staffCount: staff,
-          isMaxOccupied: false,
-          isProfileComplete: true,
-          isVerified: false,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
-      // onSnapshot will update hospitalDoc and re-render into Operational mode
+      console.log("[HospitalDashboard] Saving facility details to 'hospitals' collection:", {
+        targetDocId,
+        payload: hospitalPayload,
+      });
+
+      await setDoc(doc(db, "hospitals", targetDocId), hospitalPayload, { merge: true });
+
+      console.log("[HospitalDashboard] Successfully saved facility details to Firestore.");
+
+      // Sync local state for guest mode or immediate UI update
+      setHospitalDoc(hospitalPayload);
+      setTotalBeds(Number(beds));
+      setOccupiedBeds(0);
+      setStaffCount(Number(staff));
+      setIsMaxOccupied(false);
     } catch (err) {
-      console.error("Setup save error:", err);
-      setSetupError("Failed to save facility details. Please try again.");
+      console.error("[HospitalDashboard] Firestore setDoc error while saving facility details:", {
+        code: err.code,
+        message: err.message,
+        stack: err.stack,
+        targetDocId,
+        payload: hospitalPayload,
+      });
+      setSetupError(`Failed to save facility details (${err.code || err.message}). Please check developer console.`);
     } finally {
       setSetupSaving(false);
     }
@@ -209,27 +235,40 @@ export default function HospitalDashboard() {
   };
 
   const handleSaveOperational = async () => {
-    if (!currentUser || !hospitalDoc) return;
+    const targetDocId = currentUser?.uid || auth.currentUser?.uid || hospitalDoc?.adminUid || `guest_hospital_${Date.now()}`;
     setSaving(true);
     setSaveSuccess(false);
     const occupied = Math.max(0, Math.min(totalBeds, occupiedBeds));
     const maxOccVal = isMaxOccupied || (totalBeds > 0 && occupied >= totalBeds);
+
+    const operationalPayload = {
+      occupiedBeds: Number(occupied),
+      availableBeds: Number(Math.max(0, totalBeds - occupied)),
+      staffCount: Number(staffCount),
+      isMaxOccupied: Boolean(maxOccVal),
+      updatedAt: serverTimestamp(),
+    };
+
     try {
-      await setDoc(
-        doc(db, "hospitals", currentUser.uid),
-        {
-          occupiedBeds: occupied,
-          availableBeds: Math.max(0, totalBeds - occupied),
-          staffCount,
-          isMaxOccupied: maxOccVal,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
+      console.log("[HospitalDashboard] Updating operational telemetry in 'hospitals':", {
+        targetDocId,
+        payload: operationalPayload,
+      });
+
+      await setDoc(doc(db, "hospitals", targetDocId), operationalPayload, { merge: true });
+
+      console.log("[HospitalDashboard] Operational telemetry updated successfully.");
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err) {
-      alert(`Error saving: ${err.message}`);
+      console.error("[HospitalDashboard] Error saving operational telemetry:", {
+        code: err.code,
+        message: err.message,
+        stack: err.stack,
+        targetDocId,
+        payload: operationalPayload,
+      });
+      alert(`Error saving facility metrics: ${err.message}`);
     } finally {
       setSaving(false);
     }
@@ -323,6 +362,30 @@ export default function HospitalDashboard() {
               </div>
               <button type="submit" className="hosp-save-btn" disabled={authSubmitting} style={{ marginTop: "8px" }}>
                 {authSubmitting ? "Authenticating..." : "Sign In to Capacity Console"}
+              </button>
+
+              <div style={{ display: "flex", alignItems: "center", margin: "16px 0 10px", gap: "10px" }}>
+                <div style={{ flex: 1, height: "1px", background: "#e2e8f0" }} />
+                <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 700 }}>OR DEV / GUEST TEST</span>
+                <div style={{ flex: 1, height: "1px", background: "#e2e8f0" }} />
+              </div>
+
+              <button
+                type="button"
+                className="hosp-save-btn"
+                style={{
+                  background: "#f8fafc",
+                  color: "#334155",
+                  border: "1px solid #cbd5e1",
+                  boxShadow: "none",
+                }}
+                onClick={() => {
+                  const guestUid = `guest_hospital_${Date.now()}`;
+                  setCurrentUser({ uid: guestUid, email: "guest.facility@test.org" });
+                  setHospitalDoc({ adminUid: guestUid, isProfileComplete: false, isVerified: false });
+                }}
+              >
+                Test Guest Facility Registration &rarr;
               </button>
             </form>
           </div>

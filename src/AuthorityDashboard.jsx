@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { collection, onSnapshot, doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase";
 import {
@@ -13,11 +13,112 @@ import {
 import {
   detectSOSClusters,
   findNearestHospital,
-  playClusterAlertSound,
 } from "./utils/sosClustering";
 import { MapContainer, TileLayer, CircleMarker, Circle, Popup, Tooltip, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import "./AuthorityDashboard.css";
+import ShelterTracker, { INITIAL_MOCK_SHELTERS } from "./ShelterTracker";
+
+// Unified Disaster Incident Lifecycle Status Normalizer
+export function getUnifiedStatus(reqOrStatus) {
+  let raw = "";
+  if (typeof reqOrStatus === "string") {
+    raw = reqOrStatus;
+  } else if (reqOrStatus && typeof reqOrStatus === "object") {
+    raw = reqOrStatus.status || (reqOrStatus.volunteerRequested ? "VOLUNTEER_DISPATCHED" : "PENDING");
+  }
+  const s = String(raw).toUpperCase();
+  if (s === "RESOLVED") return "RESOLVED";
+  if (s === "IN_PROGRESS" || s === "RESPONDER_EN_ROUTE" || s === "ARRIVED" || s === "TRAVELLING" || s === "ON_SCENE") return "IN_PROGRESS";
+  if (s === "VOLUNTEER_DISPATCHED" || s === "DISPATCHED") return "VOLUNTEER_DISPATCHED";
+  return "PENDING";
+}
+
+export function getIncidentStepIndex(unifiedStatus) {
+  switch (unifiedStatus) {
+    case "PENDING":
+      return 1;
+    case "VOLUNTEER_DISPATCHED":
+      return 2;
+    case "IN_PROGRESS":
+      return 3;
+    case "RESOLVED":
+      return 4;
+    default:
+      return 1;
+  }
+}
+
+// Visual 4-Step Incident Lifecycle Progress Stepper
+export function IncidentLifecycleStepper({ status }) {
+  const currentStep = getIncidentStepIndex(getUnifiedStatus(status));
+  const steps = [
+    { num: 1, label: "1. Reported", key: "PENDING" },
+    { num: 2, label: "2. Dispatched", key: "VOLUNTEER_DISPATCHED" },
+    { num: 3, label: "3. On Scene", key: "IN_PROGRESS" },
+    { num: 4, label: "4. Resolved", key: "RESOLVED" },
+  ];
+
+  return (
+    <div style={{ margin: "8px 0 6px 0", background: "rgba(15, 23, 42, 0.5)", borderRadius: "8px", padding: "8px 10px", border: "1px solid rgba(148, 163, 184, 0.15)" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", position: "relative" }}>
+        {/* Step Connector Line */}
+        <div
+          style={{
+            position: "absolute",
+            top: "10px",
+            left: "12%",
+            right: "12%",
+            height: "2px",
+            background: "#334155",
+            zIndex: 1,
+          }}
+        />
+        {steps.map((step) => {
+          const isDone = currentStep >= step.num;
+          const isCurrent = currentStep === step.num;
+          const stepColor = isDone ? (step.num === 4 ? "#10B981" : step.num === 3 ? "#38BDF8" : step.num === 2 ? "#F59E0B" : "#3B82F6") : "#475569";
+
+          return (
+            <div key={step.key} style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1, position: "relative", zIndex: 2 }}>
+              <div
+                style={{
+                  width: "20px",
+                  height: "20px",
+                  borderRadius: "50%",
+                  background: isDone ? stepColor : "#1E293B",
+                  border: `2px solid ${stepColor}`,
+                  color: isDone ? "#FFFFFF" : "#94A3B8",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "9.5px",
+                  fontWeight: 800,
+                  boxShadow: isCurrent ? `0 0 8px ${stepColor}` : "none",
+                  transition: "all 0.2s ease",
+                }}
+              >
+                {isDone && currentStep > step.num ? "✓" : step.num}
+              </div>
+              <span
+                style={{
+                  fontSize: "9.5px",
+                  fontWeight: isCurrent ? 800 : 600,
+                  color: isDone ? (isCurrent ? "#FFFFFF" : stepColor) : "#64748B",
+                  marginTop: "4px",
+                  textAlign: "center",
+                  letterSpacing: "0.2px",
+                }}
+              >
+                {step.label}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 // Helper function to format timestamp to relative time (e.g., "10 mins ago")
 function formatTimeAgo(createdAt) {
@@ -52,8 +153,28 @@ function formatTimeAgo(createdAt) {
   return `${diffInDays} day${diffInDays > 1 ? "s" : ""} ago`;
 }
 
+// Automated Priority Tagging Scanner: identifies high-urgency keywords
+function isCriticalPriority(req) {
+  if (!req) return false;
+  const notesText = [
+    req.notes,
+    req.note,
+    req.message,
+    req.details,
+    req.situation,
+    req.category,
+    req.type,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  const criticalKeywords = ["trapped", "severe", "fire", "bleed", "child"];
+  return criticalKeywords.some((kw) => notesText.includes(kw));
+}
+
 export default function AuthorityDashboard() {
-  const [activeTab, setActiveTab] = useState("incidents"); // 'incidents' | 'hospitals' | 'risk'
+  const [activeTab, setActiveTab] = useState("incidents"); // 'incidents' | 'hospitals' | 'risk' | 'shelters'
 
   // Risk Analytics state
   const [riskSearch, setRiskSearch] = useState("");
@@ -63,7 +184,8 @@ export default function AuthorityDashboard() {
   const riskSummary = useMemo(() => getRiskSummary(), []);
   const [requests, setRequests] = useState([]);
   const [hospitals, setHospitals] = useState([]);
-  const [filter, setFilter] = useState("all"); // 'all' | 'pending' | 'dispatched' | 'resolved'
+  const [shelters, setShelters] = useState(INITIAL_MOCK_SHELTERS);
+  const [filter, setFilter] = useState("all"); // 'all' | 'pending' | 'dispatched' | 'in_progress' | 'resolved'
   const [updatingId, setUpdatingId] = useState(null);
   const [approvingId, setApprovingId] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -72,9 +194,7 @@ export default function AuthorityDashboard() {
 
   // Proximity Clustering & Priority Alert System state
   const [selectedCluster, setSelectedCluster] = useState(null);
-  const [audioEnabled, setAudioEnabled] = useState(true);
   const [dispatchingClusterId, setDispatchingClusterId] = useState(null);
-  const lastAlertedClusterIdRef = useRef(null);
 
   // 1. Subscribe to SOS Requests in real-time
   useEffect(() => {
@@ -141,23 +261,37 @@ export default function AuthorityDashboard() {
     return () => unsubscribe();
   }, []);
 
+  // 3. Subscribe to Shelters in real-time
+  useEffect(() => {
+    const q = collection(db, "shelters");
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        if (!snapshot.empty) {
+          const liveShelters = snapshot.docs.map((docSnap) => ({
+            id: docSnap.id,
+            ...docSnap.data(),
+          }));
+          setShelters(liveShelters);
+        } else {
+          setShelters(INITIAL_MOCK_SHELTERS);
+        }
+      },
+      (error) => {
+        console.warn("Firestore Shelters listener warning in AuthorityDashboard:", error);
+        setShelters(INITIAL_MOCK_SHELTERS);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
   // Proximity Clustering Engine: Groups active alerts within 500m & 15 mins
   const activeClusters = useMemo(() => {
     return detectSOSClusters(requests, 500, 15);
   }, [requests]);
 
-  // Audio Cue Trigger on new critical / elevated clusters
-  useEffect(() => {
-    if (activeClusters.length > 0) {
-      const topCluster = activeClusters[0];
-      if (topCluster.id !== lastAlertedClusterIdRef.current) {
-        lastAlertedClusterIdRef.current = topCluster.id;
-        if (audioEnabled) {
-          playClusterAlertSound(topCluster.severityLevel === "MASS_CRITICAL");
-        }
-      }
-    }
-  }, [activeClusters, audioEnabled]);
+
 
   // Batch Dispatch Emergency Unit to entire cluster
   const handleBatchDispatchCluster = async (cluster) => {
@@ -200,6 +334,44 @@ export default function AuthorityDashboard() {
     }
   };
 
+  // Dispatch Volunteer to Incident Command (Unified Status: VOLUNTEER_DISPATCHED)
+  const handleDispatchVolunteer = async (id, targetQuota = 1) => {
+    try {
+      setUpdatingId(id);
+      const reqRef = doc(db, "sos_requests", id);
+      await updateDoc(reqRef, {
+        status: "VOLUNTEER_DISPATCHED",
+        volunteerRequested: true,
+        requiredVolunteers: targetQuota,
+        dispatchedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err) {
+      console.error("Failed to dispatch volunteer:", err);
+      alert(`Could not dispatch volunteer: ${err.message || "Unknown error"}`);
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  // Update Volunteer Quota Needed
+  const handleUpdateVolunteerQuota = async (id, newQuota) => {
+    const quota = Math.max(1, Number(newQuota) || 1);
+    try {
+      setUpdatingId(id);
+      const reqRef = doc(db, "sos_requests", id);
+      await updateDoc(reqRef, {
+        requiredVolunteers: quota,
+        volunteerRequested: true,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err) {
+      console.error("Failed to update volunteer quota:", err);
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
   // Authority Action: Approve Hospital Registration (Flipping isVerified to true)
   const handleApproveHospital = async (hospitalId) => {
     try {
@@ -220,8 +392,11 @@ export default function AuthorityDashboard() {
 
   // SOS Incident Metrics computation
   const pendingCount = requests.filter((r) => r.status === "pending" || !r.status).length;
-  const dispatchedCount = requests.filter((r) => r.status === "dispatched" || r.status === "in_progress").length;
-  const resolvedCount = requests.filter((r) => r.status === "resolved").length;
+  const dispatchedCount = requests.filter((r) => {
+    const s = (r.status || "").toLowerCase();
+    return s === "dispatched" || s === "in_progress" || r.status === "RESPONDER_EN_ROUTE" || r.volunteerRequested;
+  }).length;
+  const resolvedCount = requests.filter((r) => (r.status || "").toLowerCase() === "resolved").length;
   const totalCount = requests.length;
 
   // Hospital Metrics computation (Verified facilities only)
@@ -236,12 +411,12 @@ export default function AuthorityDashboard() {
   const totalStaffAvailable = verifiedHospitals.reduce((acc, h) => acc + (Number(h.staffCount) || 0), 0);
   const maxOccupancyCount = verifiedHospitals.filter((h) => h.isMaxOccupied).length;
 
-  // Filtered requests
+  // Filtered requests based on selected tab state
   const filteredRequests = requests.filter((r) => {
-    const currentStatus = r.status || "pending";
+    const currentStatus = (r.status || "pending").toLowerCase();
     if (filter === "all") return true;
-    if (filter === "pending") return currentStatus === "pending";
-    if (filter === "dispatched") return currentStatus === "dispatched" || currentStatus === "in_progress";
+    if (filter === "pending" || filter === "active") return currentStatus === "pending" || currentStatus === "active";
+    if (filter === "dispatched") return currentStatus === "dispatched" || currentStatus === "in_progress" || r.status === "RESPONDER_EN_ROUTE" || r.volunteerRequested;
     if (filter === "resolved") return currentStatus === "resolved";
     return true;
   });
@@ -263,28 +438,6 @@ export default function AuthorityDashboard() {
         </div>
 
         <div className="eoc-nav-right">
-          <a
-            href="/hospital"
-            style={{
-              background: "rgba(2, 132, 199, 0.15)",
-              border: "1px solid rgba(2, 132, 199, 0.4)",
-              color: "#38bdf8",
-              padding: "6px 12px",
-              borderRadius: "8px",
-              fontSize: "0.82rem",
-              fontWeight: 600,
-              textDecoration: "none",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "6px",
-            }}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 6v12M6 12h12" />
-            </svg>
-            Hospital Staff Portal
-          </a>
-
           {/* Live Status Indicator */}
           <div className="eoc-live-badge" title="Real-time WebSocket / Firestore feed active">
             <span className="eoc-pulse-dot" />
@@ -318,18 +471,6 @@ export default function AuthorityDashboard() {
           </div>
 
           <div className="eoc-flash-actions">
-            <button
-              className="eoc-audio-toggle-btn"
-              onClick={() => {
-                const next = !audioEnabled;
-                setAudioEnabled(next);
-                if (next) playClusterAlertSound(false);
-              }}
-              title={audioEnabled ? "Mute Siren" : "Unmute Siren"}
-            >
-              {audioEnabled ? "🔊 Sound ON" : "🔇 Sound Muted"}
-            </button>
-
             <button
               className="eoc-flash-inspect-btn"
               onClick={() => {
@@ -402,6 +543,20 @@ export default function AuthorityDashboard() {
             {riskSummary.criticalCount} Critical
           </span>
         </button>
+
+        <button
+          className={`eoc-tab-btn ${activeTab === "shelters" ? "active" : ""}`}
+          onClick={() => setActiveTab("shelters")}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+            <polyline points="9 22 9 12 15 12 15 22" />
+          </svg>
+          Shelter Tracker
+          <span className="eoc-tab-badge" style={{ color: "#38BDF8" }}>
+            {shelters.length} Shelters
+          </span>
+        </button>
       </nav>
 
       {/* Main Content Area */}
@@ -420,16 +575,16 @@ export default function AuthorityDashboard() {
                   className={`eoc-filter-btn ${filter === "all" ? "active" : ""}`}
                   onClick={() => setFilter("all")}
                 >
-                  All Alerts
+                  All
                   <span className="eoc-filter-count">{totalCount}</span>
                 </button>
                 <button
                   role="tab"
-                  aria-selected={filter === "pending"}
-                  className={`eoc-filter-btn ${filter === "pending" ? "active" : ""}`}
+                  aria-selected={filter === "pending" || filter === "active"}
+                  className={`eoc-filter-btn ${filter === "pending" || filter === "active" ? "active" : ""}`}
                   onClick={() => setFilter("pending")}
                 >
-                  Pending
+                  Active/Pending
                   <span className="eoc-filter-count">{pendingCount}</span>
                 </button>
                 <button
@@ -440,6 +595,17 @@ export default function AuthorityDashboard() {
                 >
                   Dispatched
                   <span className="eoc-filter-count">{dispatchedCount}</span>
+                </button>
+                <button
+                  role="tab"
+                  aria-selected={filter === "in_progress"}
+                  className={`eoc-filter-btn ${filter === "in_progress" ? "active" : ""}`}
+                  onClick={() => setFilter("in_progress")}
+                >
+                  In Progress / On Scene
+                  <span className="eoc-filter-count">
+                    {requests.filter((r) => getUnifiedStatus(r) === "IN_PROGRESS").length}
+                  </span>
                 </button>
                 <button
                   role="tab"
@@ -454,15 +620,15 @@ export default function AuthorityDashboard() {
 
               <div className="eoc-stats-summary">
                 <div className="eoc-stat-item">
-                  <span>Critical Active:</span>
+                  <span>Active/Pending:</span>
                   <span className="eoc-stat-value" style={{ color: "#ff8080" }}>{pendingCount}</span>
                 </div>
                 <div className="eoc-stat-item">
-                  <span>Underway:</span>
+                  <span>Dispatched:</span>
                   <span className="eoc-stat-value" style={{ color: "#fcd34d" }}>{dispatchedCount}</span>
                 </div>
                 <div className="eoc-stat-item">
-                  <span>Cleared:</span>
+                  <span>Resolved:</span>
                   <span className="eoc-stat-value" style={{ color: "#6ee7b7" }}>{resolvedCount}</span>
                 </div>
               </div>
@@ -528,6 +694,17 @@ export default function AuthorityDashboard() {
                   const mapsUrl = hasCoordinates
                     ? `https://www.google.com/maps?q=${req.location.lat},${req.location.lng}`
                     : null;
+                  const assignedVolunteers = Array.isArray(req.assignedVolunteers)
+                    ? req.assignedVolunteers
+                    : req.assignedVolunteer
+                    ? [req.assignedVolunteer]
+                    : req.responder
+                    ? [req.responder]
+                    : [];
+
+                  const requiredVolunteers = Number(req.requiredVolunteers || req.volunteersNeeded) || 1;
+                  const assignedCount = assignedVolunteers.length;
+                  const isFull = assignedCount >= requiredVolunteers;
 
                   return (
                     <div key={req.id} className={`eoc-card ${severityClass}`}>
@@ -541,9 +718,65 @@ export default function AuthorityDashboard() {
                             {req.category || (req.type ? req.type.toUpperCase() : "GENERAL SOS")}
                           </span>
 
-                          <span className={`eoc-status-badge status-${currentStatus}`}>
-                            {currentStatus === "in_progress" ? "DISPATCHED" : currentStatus.toUpperCase()}
-                          </span>
+                          {/* Automated Priority Tagging: Red Critical Priority Badge */}
+                          {isCriticalPriority(req) && (
+                            <span
+                              className="eoc-priority-badge-critical"
+                              style={{
+                                background: "rgba(220, 38, 38, 0.2)",
+                                color: "#EF4444",
+                                border: "1px solid #DC2626",
+                                fontWeight: 800,
+                                fontSize: "0.74rem",
+                                padding: "2px 8px",
+                                borderRadius: "6px",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "5px",
+                                letterSpacing: "0.4px",
+                              }}
+                            >
+                              <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#EF4444", display: "inline-block" }} />
+                              CRITICAL PRIORITY
+                            </span>
+                          )}
+
+                          {/* Dynamic Header Status Badge: Progress & Quota */}
+                          {assignedCount > 0 ? (
+                            <span
+                              className="eoc-status-badge"
+                              style={{
+                                background: isFull ? "rgba(16, 185, 129, 0.2)" : "rgba(245, 158, 11, 0.2)",
+                                color: isFull ? "#10B981" : "#F59E0B",
+                                border: `1px solid ${isFull ? "#10B981" : "#F59E0B"}`,
+                                fontWeight: 800,
+                                fontSize: "0.74rem",
+                                padding: "2px 8px",
+                                borderRadius: "6px",
+                              }}
+                            >
+                              🤝 {assignedCount}/{requiredVolunteers} VOLUNTEERS RESPONDING
+                            </span>
+                          ) : req.volunteerRequested || req.status === "DISPATCHED" || currentStatus === "dispatched" ? (
+                            <span
+                              className="eoc-status-badge status-dispatched"
+                              style={{
+                                background: "rgba(245, 158, 11, 0.15)",
+                                color: "#F59E0B",
+                                border: "1px solid #F59E0B",
+                                fontWeight: 800,
+                                fontSize: "0.74rem",
+                                padding: "2px 8px",
+                                borderRadius: "6px",
+                              }}
+                            >
+                              📢 0/{requiredVolunteers} VOLUNTEERS REQUESTED
+                            </span>
+                          ) : (
+                            <span className={`eoc-status-badge status-${currentStatus}`}>
+                              {currentStatus === "in_progress" ? "IN PROGRESS" : currentStatus.toUpperCase()}
+                            </span>
+                          )}
                         </div>
 
                         <span className="eoc-timestamp" title={req.createdAt?.toDate ? req.createdAt.toDate().toLocaleString() : ""}>
@@ -557,6 +790,9 @@ export default function AuthorityDashboard() {
 
                       {/* Card Content */}
                       <div className="eoc-card-body">
+                        {/* Visual 4-Step Incident Lifecycle Progress Stepper */}
+                        <IncidentLifecycleStepper status={req.status || (req.volunteerRequested ? "VOLUNTEER_DISPATCHED" : "PENDING")} />
+
                         {/* Location Coordinates */}
                         <div className="eoc-location-row">
                           <span className="eoc-location-label">
@@ -585,6 +821,42 @@ export default function AuthorityDashboard() {
                             <span className="eoc-coords-unavailable">Coordinates unavailable</span>
                           )}
                         </div>
+
+                        {/* Assigned Volunteer Dynamic Roster */}
+                        {assignedVolunteers.length > 0 && (
+                          <div style={{ background: "rgba(15, 23, 42, 0.6)", border: "1px solid rgba(148, 163, 184, 0.2)", borderRadius: "8px", padding: "10px 12px", display: "flex", flexDirection: "column", gap: "8px" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid rgba(148, 163, 184, 0.15)", paddingBottom: "4px" }}>
+                              <span style={{ fontSize: "11px", fontWeight: 800, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                                Assigned Responders ({assignedCount}/{requiredVolunteers})
+                              </span>
+                              <span style={{ fontSize: "11px", fontWeight: 700, color: isFull ? "#10B981" : "#F59E0B" }}>
+                                {isFull ? "✓ QUOTA FILLED" : `${requiredVolunteers - assignedCount} MORE NEEDED`}
+                              </span>
+                            </div>
+                            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                              {assignedVolunteers.map((vol, idx) => (
+                                <div key={vol.responderId || vol.volunteerId || idx} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(30, 41, 59, 0.6)", padding: "6px 10px", borderRadius: "6px" }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                                    <span style={{ fontSize: "13px" }}>👤</span>
+                                    <span style={{ fontSize: "12.5px", fontWeight: 700, color: "#F8FAFC" }}>
+                                      {vol.name || `Volunteer ${idx + 1}`}
+                                    </span>
+                                    <span style={{ fontSize: "10.5px", color: "#94A3B8", background: "rgba(255,255,255,0.08)", padding: "1px 5px", borderRadius: "4px" }}>
+                                      {vol.responderId || vol.volunteerId || "VOL-1024"}
+                                    </span>
+                                  </div>
+                                  {vol.phone ? (
+                                    <a href={`tel:${vol.phone}`} style={{ fontSize: "11.5px", fontWeight: 700, color: "#38BDF8", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "3px" }}>
+                                      📞 {vol.phone}
+                                    </a>
+                                  ) : (
+                                    <span style={{ fontSize: "11px", color: "#64748B" }}>Radio Dispatch</span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
 
                         {/* Caller Notes */}
                         <blockquote className="eoc-notes-box">
@@ -619,33 +891,72 @@ export default function AuthorityDashboard() {
                         )}
                       </div>
 
-                      {/* Action Controls */}
-                      <div className="eoc-card-footer">
-                        {currentStatus !== "dispatched" && currentStatus !== "in_progress" && currentStatus !== "resolved" && (
-                          <button
-                            className="eoc-btn eoc-btn-dispatch"
-                            onClick={() => handleUpdateStatus(req.id, "dispatched")}
-                            disabled={updatingId === req.id}
-                          >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                              <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                            </svg>
-                            {updatingId === req.id ? "Dispatching..." : "Dispatch Team"}
-                          </button>
+                      {/* Action Controls & Volunteer Quota Selector */}
+                      <div className="eoc-card-footer" style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                        {currentStatus !== "resolved" && (
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", background: "rgba(15, 23, 42, 0.5)", border: "1px solid rgba(148, 163, 184, 0.15)", borderRadius: "8px", padding: "6px 10px" }}>
+                            <span style={{ fontSize: "12px", fontWeight: 700, color: "#94A3B8" }}>
+                              Volunteers Needed:
+                            </span>
+                            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                              <button
+                                type="button"
+                                style={{ width: "26px", height: "26px", background: "#1E293B", border: "1px solid #475569", color: "#FFF", borderRadius: "6px", cursor: "pointer", fontWeight: 800, fontSize: "14px", display: "inline-flex", alignItems: "center", justifyContent: "center" }}
+                                onClick={() => handleUpdateVolunteerQuota(req.id, Math.max(1, requiredVolunteers - 1))}
+                                disabled={updatingId === req.id || requiredVolunteers <= 1}
+                                title="Decrease quota"
+                              >
+                                -
+                              </button>
+                              <span style={{ fontSize: "13px", fontWeight: 800, color: "#38BDF8", minWidth: "22px", textAlign: "center" }}>
+                                {requiredVolunteers}
+                              </span>
+                              <button
+                                type="button"
+                                style={{ width: "26px", height: "26px", background: "#1E293B", border: "1px solid #475569", color: "#FFF", borderRadius: "6px", cursor: "pointer", fontWeight: 800, fontSize: "14px", display: "inline-flex", alignItems: "center", justifyContent: "center" }}
+                                onClick={() => handleUpdateVolunteerQuota(req.id, requiredVolunteers + 1)}
+                                disabled={updatingId === req.id}
+                                title="Increase quota"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
                         )}
 
-                        {currentStatus !== "resolved" && (
-                          <button
-                            className="eoc-btn eoc-btn-resolve"
-                            onClick={() => handleUpdateStatus(req.id, "resolved")}
-                            disabled={updatingId === req.id}
-                          >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                              <polyline points="20 6 9 17 4 12"></polyline>
-                            </svg>
-                            {updatingId === req.id ? "Updating..." : "Mark Resolved"}
-                          </button>
-                        )}
+                        <div style={{ display: "flex", gap: "8px", width: "100%" }}>
+                          {currentStatus !== "resolved" && !isFull && (
+                            <button
+                              className="eoc-btn eoc-btn-dispatch"
+                              onClick={() => handleDispatchVolunteer(req.id, requiredVolunteers)}
+                              disabled={updatingId === req.id}
+                              style={{ flex: 1 }}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                              </svg>
+                              {updatingId === req.id
+                                ? "Dispatching..."
+                                : req.volunteerRequested || req.status === "DISPATCHED" || currentStatus === "dispatched"
+                                ? "Request More Volunteers ✓"
+                                : `Dispatch ${requiredVolunteers} Volunteer${requiredVolunteers > 1 ? "s" : ""}`}
+                            </button>
+                          )}
+
+                          {currentStatus !== "resolved" && (
+                            <button
+                              className="eoc-btn eoc-btn-resolve"
+                              onClick={() => handleUpdateStatus(req.id, "resolved")}
+                              disabled={updatingId === req.id}
+                              style={{ flex: isFull ? 1 : undefined }}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="20 6 9 17 4 12"></polyline>
+                              </svg>
+                              {updatingId === req.id ? "Updating..." : "Mark Resolved"}
+                            </button>
+                          )}
+                        </div>
 
                         {currentStatus === "resolved" && (
                           <button
@@ -658,16 +969,6 @@ export default function AuthorityDashboard() {
                               <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
                             </svg>
                             {updatingId === req.id ? "Reopening..." : "Reopen / Mark Pending"}
-                          </button>
-                        )}
-
-                        {currentStatus === "dispatched" && (
-                          <button
-                            className="eoc-btn eoc-btn-reopen"
-                            onClick={() => handleUpdateStatus(req.id, "pending")}
-                            disabled={updatingId === req.id}
-                          >
-                            Reset to Pending
                           </button>
                         )}
                       </div>
@@ -986,10 +1287,20 @@ export default function AuthorityDashboard() {
             setRiskSortField={setRiskSortField}
             requests={requests}
             hospitals={verifiedHospitals}
+            shelters={shelters}
             activeClusters={activeClusters}
             selectedCluster={selectedCluster}
             setSelectedCluster={setSelectedCluster}
           />
+        )}
+
+        {/* ========================================================================= */}
+        {/* VIEW 4: SHELTER & RESOURCE TRACKER                                        */}
+        {/* ========================================================================= */}
+        {activeTab === "shelters" && (
+          <div style={{ width: "100%", marginTop: "10px" }}>
+            <ShelterTracker isEmbedded={true} />
+          </div>
         )}
       </main>
 
@@ -1061,6 +1372,7 @@ function RiskAnalyticsPanel({
   setRiskSearch,
   requests = [],
   hospitals: _hospitals = [],
+  shelters = [],
   activeClusters = [],
   selectedCluster: _selectedCluster,
   setSelectedCluster,
@@ -1588,6 +1900,68 @@ function RiskAnalyticsPanel({
                   </CircleMarker>
                 </div>
               ))}
+              {/* 4. Registered Disaster Shelters */}
+              {shelters.map((shelter) => {
+                const isFull = shelter.status === "Full";
+                const shelterColor = isFull ? "#EF4444" : "#0EA5E9";
+                const total = Number(shelter.totalBeds) || 0;
+                const occ = Number(shelter.occupiedBeds) || 0;
+                const free = Math.max(0, total - occ);
+
+                return (
+                  <CircleMarker
+                    key={shelter.id}
+                    center={[shelter.lat, shelter.lng]}
+                    radius={9}
+                    pathOptions={{
+                      color: "#FFFFFF",
+                      fillColor: shelterColor,
+                      fillOpacity: 1,
+                      weight: 2,
+                    }}
+                  >
+                    <Popup className="risk-popup">
+                      <div className="risk-popup-content">
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span style={{ fontSize: "0.76rem", fontWeight: 800, color: shelterColor, textTransform: "uppercase" }}>
+                            🏠 {isFull ? "SHELTER (FULL)" : "SHELTER (OPEN)"}
+                          </span>
+                          <span style={{ fontSize: "0.72rem", color: shelter.isVerified ? "#34D399" : "#F59E0B", fontWeight: 800 }}>
+                            {shelter.isVerified ? "✓ VERIFIED" : "⏳ PENDING"}
+                          </span>
+                        </div>
+                        <h4 style={{ fontSize: "0.92rem", fontWeight: 800, color: "#FFFFFF", margin: "4px 0" }}>
+                          {shelter.shelterName || shelter.name}
+                        </h4>
+                        <div style={{ fontSize: "0.8rem", color: "#CBD5E1" }}>
+                          Bed Capacity: <strong style={{ color: "#38BDF8" }}>{free} Free</strong> / {total} Total
+                        </div>
+                        {shelter.supplyStatus && (
+                          <div style={{ fontSize: "0.74rem", color: "#CBD5E1", marginTop: "2px" }}>
+                            Supply: <strong style={{ color: shelter.supplyStatus === "Critical" ? "#EF4444" : shelter.supplyStatus === "Moderate" ? "#F59E0B" : "#34D399" }}>{shelter.supplyStatus}</strong>
+                          </div>
+                        )}
+                        <div style={{ fontSize: "0.74rem", color: "#94A3B8", marginTop: "2px" }}>
+                          {shelter.address || "Relief Staging Area"}
+                        </div>
+                        {(shelter.contactPhone || shelter.phone) && (
+                          <div style={{ fontSize: "0.74rem", color: "#38BDF8", marginTop: "2px" }}>
+                            📞 {shelter.contactPhone || shelter.phone}
+                          </div>
+                        )}
+                        <a
+                          href={`https://www.google.com/maps/dir/?api=1&destination=${shelter.lat},${shelter.lng}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ display: "inline-block", marginTop: "6px", fontSize: "0.75rem", color: "#58A6FF", textDecoration: "none" }}
+                        >
+                          Navigate to Shelter &rarr;
+                        </a>
+                      </div>
+                    </Popup>
+                  </CircleMarker>
+                );
+              })}
             </MapContainer>
 
             {/* Floating Map Legend */}
@@ -1596,6 +1970,18 @@ function RiskAnalyticsPanel({
               <div className="legend-item">
                 <span className="legend-dot" style={{ background: "#D32F2F", boxShadow: "0 0 8px #D32F2F" }} />
                 <span>#1 Critical ({topThreeZones[0]?.activeScore || 98} Score)</span>
+              </div>
+              <div className="legend-item">
+                <span className="legend-dot" style={{ background: "#EF4444" }} />
+                <span>Active SOS Call Signal</span>
+              </div>
+              <div className="legend-item">
+                <span className="legend-dot" style={{ background: "#0EA5E9", boxShadow: "0 0 6px #0EA5E9" }} />
+                <span>Evacuation Shelter (Open)</span>
+              </div>
+              <div className="legend-item">
+                <span className="legend-dot" style={{ background: "#F59E0B" }} />
+                <span>Dispatched / In Progress</span>
               </div>
               <div className="legend-item">
                 <span className="legend-dot" style={{ background: "#F57C00", boxShadow: "0 0 8px #F57C00" }} />

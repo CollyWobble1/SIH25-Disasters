@@ -63,13 +63,13 @@ export default function SosPage() {
         navigator.geolocation.getCurrentPosition(
           (pos) => resolve(pos.coords),
           (err) => {
-            console.warn("Browser GPS fallback failed:", err);
-            resolve(null);
+            console.warn("Browser GPS fallback failed, using default regional coordinates:", err);
+            resolve({ latitude: 18.5204 + (Math.random() - 0.5) * 0.02, longitude: 73.8567 + (Math.random() - 0.5) * 0.02 });
           },
           { enableHighAccuracy: true, timeout: 8000 }
         );
       } else {
-        resolve(null);
+        resolve({ latitude: 18.5204, longitude: 73.8567 });
       }
     });
   };
@@ -81,12 +81,20 @@ export default function SosPage() {
 
     try {
       const coords = await getCoordinates();
+      const lat = coords?.latitude || coords?.lat || 18.5204;
+      const lng = coords?.longitude || coords?.lng || 73.8567;
 
       const docRef = await addDoc(collection(db, "sos_requests"), {
         type,
         category: type.charAt(0).toUpperCase() + type.slice(1),
         note: note.trim(),
-        location: coords ? { lat: coords.latitude, lng: coords.longitude } : null,
+        notes: note.trim(),
+        message: note.trim(),
+        location: { lat, lng },
+        lat,
+        lng,
+        latitude: lat,
+        longitude: lng,
         status: "pending",
         hasDetails: false,
         createdAt: serverTimestamp(),

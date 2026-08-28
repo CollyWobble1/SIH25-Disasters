@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Disaster Response Volunteer App | SIH Prototype</title>
+  <meta name="description" content="Mobile-first emergency disaster response volunteer platform for field coordination, location selection, on-site task assignment, and offline mesh synchronization." />
+  
+  <!-- Google Fonts: Plus Jakarta Sans -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <!-- Core Design System & Component Styles -->
+  <link rel="stylesheet" href="css/variables.css" />
+  <link rel="stylesheet" href="css/phone-frame.css" />
+  <link rel="stylesheet" href="css/app.css" />
+  <link rel="stylesheet" href="css/alert.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/map.css" />
+</head>
+<body>
+
+  <!-- Outer Presentation Canvas (Centered Mobile Device on Laptop) -->
+  <div class="presentation-canvas">
+    
+    <!-- SIH Presentation Top Badge -->
+    <div class="presentation-badge">
+      <span class="dot"></span>
+      <span>Smart India Hackathon • Field Volunteer Prototype</span>
+    </div>
+
+    <!-- Phone Mockup Device Frame -->
+    <div class="phone-mockup" role="region" aria-label="Simulated Mobile Smartphone">
+      
+      <!-- Internal Screen Container -->
+      <div class="phone-screen">
+        
+        <!-- Status Bar (Time, Dynamic Island, Network/Battery Icons) -->
+        <header class="phone-status-bar" aria-label="Status Bar">
+          <span class="status-time" id="status-time">09:41</span>
+          
+          <!-- Dynamic Island / Top Camera Notch -->
+          <div class="dynamic-island" aria-hidden="true">
+            <span class="camera"></span>
+            <span class="sensor"></span>
+          </div>
+
+          <div class="status-icons" aria-label="Signal and Battery">
+            <!-- Cellular Signal -->
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 3c-4.97 0-9 4.03-9 9 0 2.12.74 4.07 1.97 5.61L4.35 19.4c-.22.28-.15.69.15.89.28.18.66.12.87-.15l1.4-1.78C8.24 19.34 10.04 20 12 20c4.97 0 9-4.03 9-9s-4.03-9-9-9zm0 15c-3.31 0-6-2.69-6-6s2.69-6 6-6 6 2.69 6 6-2.69 6-6 6z"/>
+            </svg>
+            <!-- Battery -->
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="1" y="6" width="18" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="2"/>
+              <path d="M23 10v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <rect x="3" y="8" width="12" height="8" rx="1" fill="currentColor"/>
+            </svg>
+          </div>
+        </header>
+
+        <!-- App Header (Logo Brand & Offline/Online Status Pill) -->
+        <div class="app-header">
+          <div class="header-brand">
+            <div class="header-logo-icon">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                <path d="M12 8v8M8 12h8"/>
+              </svg>
+            </div>
+            <div class="header-title-wrap">
+              <span class="header-app-name">SIH RESCUE</span>
+              <span class="header-app-sub">Volunteer Unit</span>
+            </div>
+          </div>
+
+          <!-- Connectivity Status Pill (ONLINE / OFFLINE / SYNCING...) -->
+          <button type="button" class="connectivity-pill online" id="connectivity-pill" title="Click to toggle offline mode">
+            <span class="pill-dot"></span>
+            <span>ONLINE</span>
+          </button>
+        </div>
+
+        <!-- Offline Floating Banner -->
+        <div class="offline-banner" id="offline-banner" style="display: none;"></div>
+
+        <!-- Toast Notifications Mount -->
+        <div class="toast-container" id="toast-container" aria-live="polite"></div>
+
+        <!-- Main Scrollable Screen Content Container -->
+        <main class="app-content" id="app-content" role="region" aria-label="Volunteer Application Screen">
+          <!-- Dynamically rendered views -->
+        </main>
+
+        <!-- Bottom Navigation Bar -->
+        <nav class="bottom-nav" id="bottom-nav" aria-label="Bottom Navigation">
+          <!-- Dynamically rendered tabs -->
+        </nav>
+
+        <!-- Home Indicator Bar (iOS Style) -->
+        <div class="home-indicator"></div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Main JavaScript Application -->
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

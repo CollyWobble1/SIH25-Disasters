@@ -3,6 +3,11 @@ import HomePage from "./HomePage";
 import SosPage from "./SosPage";
 import AuthorityDashboard from "./AuthorityDashboard";
 import HospitalDashboard from "./HospitalDashboard";
+import VolunteerPortal from './components/volunteer/VolunteerPortal';
+import ShelterTracker from "./ShelterTracker";
+import ShelterRegistration from "./ShelterRegistration";
+
+
 
 // Route Guard Component: Strictly isolates and protects the Authority Incident Command
 function ProtectedAuthorityRoute({ children }) {
@@ -25,7 +30,9 @@ function App() {
         <Route path="/" element={<HomePage />} />
         <Route path="/sos" element={<SosPage />} />
         <Route path="/hospital" element={<HospitalDashboard />} />
-
+        <Route path="/volunteer" element={<VolunteerPortal />} />
+        <Route path="/shelter" element={<ShelterRegistration />} />
+        <Route path="/shelters" element={<ShelterTracker />} />
         {/* Protected Authority Operations Console */}
         <Route
           path="/authority"

@@ -561,7 +561,7 @@
 .role-btn-grey {
   width: 100%;
   padding: 14px;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(188, 4, 4, 0.79);
   border: 1px solid var(--sos-border);
   color: var(--sos-text);
   border-radius: 12px;
@@ -573,5 +573,5 @@
 }
 
 .role-btn-grey:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(117, 8, 8, 0.877)
 }

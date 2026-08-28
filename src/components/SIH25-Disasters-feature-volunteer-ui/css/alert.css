@@ -1,0 +1,267 @@
+/* ==========================================================================
+   Screen 1: Government Disaster Alert Notification Styling
+   ========================================================================== */
+
+.alert-view-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  justify-content: space-between;
+  animation: fadeIn 0.25s ease-out;
+}
+
+/* Official Government Emergency Alert Header Card */
+.emergency-alert-card {
+  background: #FFFFFF;
+  border-radius: var(--radius-lg);
+  border: 2px solid var(--color-emergency-red);
+  box-shadow: 0 8px 24px -4px rgba(220, 38, 38, 0.18), 0 2px 6px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+/* Alert Official Header Bar */
+.alert-header-banner {
+  background: var(--color-emergency-red);
+  color: #FFFFFF;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.alert-shield-icon {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.alert-header-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.alert-top-title {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: #FEE2E2;
+}
+
+.alert-gov-source {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.2px;
+  color: #FFFFFF;
+}
+
+/* Alert Body Content */
+.alert-body {
+  padding: 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.alert-primary-msg {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1E293B;
+  line-height: 1.4;
+}
+
+/* Incident Highlight Block */
+.alert-incident-box {
+  background: var(--color-emergency-red-bg);
+  border: 1px solid #FECACA;
+  border-radius: var(--radius-md);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.alert-zone-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.alert-zone-title {
+  font-size: 17px;
+  font-weight: 800;
+  color: #991B1B;
+}
+
+.alert-distance-badge {
+  font-size: 12px;
+  font-weight: 700;
+  background: #FFFFFF;
+  color: #991B1B;
+  border: 1px solid #FCA5A5;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+}
+
+.alert-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.alert-pill {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.alert-pill.flood {
+  background: #DBEAFE;
+  color: #1E40AF;
+  border: 1px solid #BFDBFE;
+}
+
+.alert-pill.high-prio {
+  background: #FEE2E2;
+  color: #B91C1C;
+  border: 1px solid #FCA5A5;
+}
+
+.alert-pill.source {
+  background: #F1F5F9;
+  color: #475569;
+  border: 1px solid #E2E8F0;
+}
+
+.alert-requirement-text {
+  font-size: 13px;
+  color: #475569;
+  font-weight: 500;
+  line-height: 1.4;
+  margin-top: 2px;
+}
+
+/* Call to Action Section */
+.alert-prompt-section {
+  background: #FFFFFF;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 18px 16px;
+  box-shadow: var(--shadow-sm);
+  margin-top: 12px;
+}
+
+.alert-prompt-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text-primary);
+  text-align: center;
+  margin-bottom: 14px;
+}
+
+.alert-btn-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.btn-emergency-yes {
+  background: var(--color-emergency-red);
+  color: #FFFFFF;
+  border: none;
+  height: 52px;
+  border-radius: var(--radius-md);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
+  transition: all var(--transition-fast);
+}
+
+.btn-emergency-yes:hover {
+  background: var(--color-emergency-red-dark);
+  transform: translateY(-1px);
+}
+
+.btn-emergency-yes:active {
+  transform: translateY(1px);
+}
+
+.btn-emergency-no {
+  background: #F8FAFC;
+  color: #475569;
+  border: 1px solid #CBD5E1;
+  height: 44px;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+}
+
+.btn-emergency-no:hover {
+  background: #F1F5F9;
+  color: var(--text-primary);
+}
+
+/* Not Now Screen */
+.not-now-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  text-align: center;
+  padding: 20px;
+  gap: 16px;
+}
+
+.not-now-icon-circle {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #F1F5F9;
+  border: 1px solid #CBD5E1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #64748B;
+}
+
+.not-now-message {
+  font-size: 16px;
+  font-weight: 600;
+  color: #334155;
+  line-height: 1.5;
+  max-width: 280px;
+}
+
+.btn-return-alert {
+  background: #0F172A;
+  color: #FFFFFF;
+  border: none;
+  padding: 12px 24px;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  margin-top: 10px;
+  transition: background var(--transition-fast);
+}
+
+.btn-return-alert:hover {
+  background: #1E293B;
+}
