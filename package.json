@@ -1,0 +1,26 @@
+{
+  "name": "sih-disaster-volunteer-app",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Mobile-First Disaster Response Volunteer Application Prototype for Smart India Hackathon",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "serve": "python server.py"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0"
+  },
+  "keywords": [
+    "disaster-response",
+    "volunteer",
+    "sih",
+    "emergency-logistics",
+    "offline-first",
+    "mesh"
+  ],
+  "author": "SIH Emergency Logistics Team",
+  "license": "MIT"
+}

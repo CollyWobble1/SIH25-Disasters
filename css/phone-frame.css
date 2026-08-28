@@ -1,0 +1,429 @@
+/* ==========================================================================
+   Presentation Canvas & Realistic Mobile Phone Frame
+   ========================================================================== */
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  font-family: var(--font-family);
+  background-color: var(--bg-presentation);
+  color: var(--text-primary);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow-x: hidden;
+  background-image: 
+    radial-gradient(circle at 50% 10%, rgba(37, 99, 235, 0.15), transparent 45%),
+    radial-gradient(circle at 80% 80%, rgba(220, 38, 38, 0.08), transparent 40%),
+    linear-gradient(to bottom, #0A0F1D 0%, #060913 100%);
+  padding: 20px 10px 100px 10px;
+}
+
+/* Outer Presentation Canvas */
+.presentation-canvas {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* Presentation Top Header Badge */
+.presentation-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 6px 14px;
+  border-radius: var(--radius-pill);
+  color: #E2E8F0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  margin-bottom: 20px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.presentation-badge .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: #22C55E;
+  box-shadow: 0 0 10px #22C55E;
+  animation: pulse-live 2s infinite ease-in-out;
+}
+
+@keyframes pulse-live {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
+}
+
+/* Phone Bezel Frame */
+.phone-mockup {
+  position: relative;
+  width: var(--phone-width);
+  height: var(--phone-height);
+  background: #020617;
+  border-radius: 48px;
+  padding: 10px;
+  box-shadow: var(--shadow-phone);
+  border: 4px solid #1E293B;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: transform var(--transition-smooth);
+}
+
+/* Internal Mobile Viewport Screen */
+.phone-screen {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: var(--bg-phone);
+  border-radius: 40px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Simulated Smartphone Status Bar */
+.phone-status-bar {
+  height: 44px;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #FFFFFF;
+  color: #0F172A;
+  font-size: 13px;
+  font-weight: 700;
+  z-index: 50;
+  flex-shrink: 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+.status-time {
+  font-feature-settings: 'tnum';
+  letter-spacing: -0.2px;
+}
+
+/* Dynamic Island / Notch */
+.dynamic-island {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100px;
+  height: 24px;
+  background: #000000;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  z-index: 60;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.dynamic-island .camera {
+  width: 9px;
+  height: 9px;
+  background: #0F172A;
+  border-radius: 50%;
+  border: 1px solid #1E293B;
+}
+
+.dynamic-island .sensor {
+  width: 7px;
+  height: 7px;
+  background: #040814;
+  border-radius: 50%;
+}
+
+.status-icons {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #1E293B;
+}
+
+/* App Header */
+.app-header {
+  height: 52px;
+  background: #FFFFFF;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-subtle);
+  z-index: 40;
+  flex-shrink: 0;
+}
+
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-logo-icon {
+  width: 28px;
+  height: 28px;
+  background: var(--color-emergency-red);
+  color: white;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.header-title-wrap {
+  display: flex;
+  flex-direction: column;
+}
+
+.header-app-name {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  color: var(--text-primary);
+  line-height: 1.1;
+}
+
+.header-app-sub {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-emergency-red);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Connectivity Status Pill (ONLINE / OFFLINE / SYNCING) */
+.connectivity-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all var(--transition-smooth);
+}
+
+.connectivity-pill.online {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+  border-color: var(--color-success-border);
+}
+
+.connectivity-pill.online .pill-dot {
+  width: 6px;
+  height: 6px;
+  background: var(--color-success);
+  border-radius: 50%;
+}
+
+.connectivity-pill.offline {
+  background: var(--color-high-bg);
+  color: var(--color-high);
+  border-color: var(--color-high-border);
+  animation: pulse-border 2s infinite;
+}
+
+.connectivity-pill.offline .pill-dot {
+  width: 6px;
+  height: 6px;
+  background: var(--color-high);
+  border-radius: 50%;
+}
+
+.connectivity-pill.syncing {
+  background: var(--color-medium-bg);
+  color: var(--color-medium);
+  border-color: var(--color-medium-border);
+}
+
+.connectivity-pill.syncing .pill-dot {
+  width: 6px;
+  height: 6px;
+  background: var(--color-medium);
+  border-radius: 50%;
+  animation: pulse-live 0.8s infinite;
+}
+
+@keyframes pulse-border {
+  0%, 100% { border-color: var(--color-high-border); }
+  50% { border-color: rgba(217, 119, 6, 0.3); }
+}
+
+/* Offline Floating Top Banner (shown when offline) */
+.offline-banner {
+  background: #FFFBEB;
+  border-bottom: 1px solid #FCD34D;
+  padding: 6px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 600;
+  color: #92400E;
+  z-index: 35;
+  flex-shrink: 0;
+}
+
+.offline-banner-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.offline-banner-tag {
+  background: #FEF3C7;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+/* Main Scrollable Screen Content Container */
+.app-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  background: var(--bg-phone);
+  -webkit-overflow-scrolling: touch;
+}
+
+.app-content::-webkit-scrollbar {
+  width: 4px;
+}
+.app-content::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 4px;
+}
+
+/* Bottom Navigation Bar */
+.bottom-nav {
+  height: 62px;
+  background: #FFFFFF;
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  padding: 0 8px;
+  z-index: 40;
+  flex-shrink: 0;
+}
+
+.nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 6px 14px;
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+  position: relative;
+}
+
+.nav-item svg {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2;
+  transition: transform var(--transition-fast);
+}
+
+.nav-item:hover {
+  color: var(--text-primary);
+}
+
+.nav-item.active {
+  color: var(--color-emergency-red);
+}
+
+.nav-item.active svg {
+  stroke-width: 2.5;
+  transform: translateY(-1px);
+}
+
+.nav-item .badge-count {
+  position: absolute;
+  top: 4px;
+  right: 12px;
+  background: var(--color-emergency-red);
+  color: white;
+  font-size: 9px;
+  font-weight: 800;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Home Indicator Bar (iOS Style) */
+.home-indicator {
+  width: 120px;
+  height: 4px;
+  background: #CBD5E1;
+  border-radius: 2px;
+  margin: 6px auto 4px auto;
+  flex-shrink: 0;
+}
+
+/* Responsive Viewport for Actual Mobile Devices */
+@media (max-width: 480px) {
+  body {
+    padding: 0;
+    background: var(--bg-phone);
+  }
+
+  .presentation-canvas {
+    height: 100vh;
+    justify-content: stretch;
+  }
+
+  .presentation-badge {
+    display: none;
+  }
+
+  .phone-mockup {
+    width: 100%;
+    height: 100vh;
+    border-radius: 0;
+    padding: 0;
+    border: none;
+    box-shadow: none;
+  }
+
+  .phone-screen {
+    border-radius: 0;
+  }
+}
