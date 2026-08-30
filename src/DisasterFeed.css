@@ -1,0 +1,251 @@
+/* Crowdsourced Community Disaster Feed Styles */
+
+.feed-container {
+  background: #0D1117;
+  border: 1px solid #2B3240;
+  border-radius: 14px;
+  padding: 20px;
+  color: #F0F6FC;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+}
+
+.feed-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #21262D;
+  padding-bottom: 14px;
+}
+
+.feed-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.feed-title {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #FFFFFF;
+  margin: 0;
+}
+
+.feed-badge {
+  background: rgba(14, 165, 233, 0.15);
+  color: #38BDF8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+/* Post Submission Form */
+.feed-post-form {
+  background: #161B22;
+  border: 1px solid #30363D;
+  border-radius: 10px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.feed-input-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.feed-input {
+  background: #0D1117;
+  border: 1px solid #30363D;
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: #F0F6FC;
+  font-size: 0.85rem;
+  outline: none;
+}
+
+.feed-input:focus {
+  border-color: #38BDF8;
+}
+
+.feed-textarea {
+  background: #0D1117;
+  border: 1px solid #30363D;
+  border-radius: 6px;
+  padding: 10px 12px;
+  color: #F0F6FC;
+  font-size: 0.88rem;
+  resize: vertical;
+  min-height: 60px;
+  outline: none;
+  font-family: inherit;
+}
+
+.feed-textarea:focus {
+  border-color: #38BDF8;
+}
+
+.feed-submit-btn {
+  align-self: flex-end;
+  background: #0284C7;
+  border: 1px solid #38BDF8;
+  color: #FFFFFF;
+  font-weight: 700;
+  font-size: 0.85rem;
+  padding: 8px 18px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+}
+
+.feed-submit-btn:hover {
+  background: #0369A1;
+}
+
+/* Feed Cards List */
+.feed-posts-stream {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 580px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.feed-post-card {
+  background: #161B22;
+  border: 1px solid #30363D;
+  border-radius: 10px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: border-color 0.15s ease;
+}
+
+.feed-post-card.converted {
+  border-color: #EF4444;
+  background: rgba(239, 68, 68, 0.05);
+}
+
+.feed-post-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.feed-author-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.feed-author-name {
+  font-weight: 700;
+  color: #F0F6FC;
+  font-size: 0.88rem;
+}
+
+.feed-location-badge {
+  font-size: 0.72rem;
+  color: #8B949E;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.feed-category-pill {
+  font-size: 0.7rem;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.feed-category-pill.flood {
+  background: rgba(14, 165, 233, 0.2);
+  color: #38BDF8;
+}
+
+.feed-category-pill.fire {
+  background: rgba(239, 68, 68, 0.2);
+  color: #EF4444;
+}
+
+.feed-category-pill.roadblock {
+  background: rgba(245, 158, 11, 0.2);
+  color: #F59E0B;
+}
+
+.feed-category-pill.medical {
+  background: rgba(168, 85, 247, 0.2);
+  color: #C084FC;
+}
+
+.feed-category-pill.general {
+  background: rgba(148, 163, 184, 0.2);
+  color: #CBD5E1;
+}
+
+.feed-post-text {
+  color: #E6EDF3;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.feed-post-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid #21262D;
+  padding-top: 8px;
+  margin-top: 4px;
+}
+
+.feed-time {
+  font-size: 0.72rem;
+  color: #6E7681;
+}
+
+.feed-convert-btn {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid #EF4444;
+  color: #EF4444;
+  font-weight: 700;
+  font-size: 0.78rem;
+  padding: 5px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+}
+
+.feed-convert-btn:hover {
+  background: #EF4444;
+  color: #FFFFFF;
+}
+
+.feed-converted-badge {
+  background: rgba(239, 68, 68, 0.2);
+  color: #F87171;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}

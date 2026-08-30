@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
-import { collection, onSnapshot, doc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { collection, onSnapshot, doc, updateDoc, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase";
 import {
   getZonesSortedByRisk,
@@ -18,6 +18,8 @@ import { MapContainer, TileLayer, CircleMarker, Circle, Popup, Tooltip, useMap }
 import "leaflet/dist/leaflet.css";
 import "./AuthorityDashboard.css";
 import ShelterTracker, { INITIAL_MOCK_SHELTERS } from "./ShelterTracker";
+import DisasterMap from "./DisasterMap";
+import DisasterFeed from "./DisasterFeed";
 
 // Unified Disaster Incident Lifecycle Status Normalizer
 export function getUnifiedStatus(reqOrStatus) {
@@ -174,7 +176,7 @@ function isCriticalPriority(req) {
 }
 
 export default function AuthorityDashboard() {
-  const [activeTab, setActiveTab] = useState("incidents"); // 'incidents' | 'hospitals' | 'risk' | 'shelters'
+  const [activeTab, setActiveTab] = useState("incidents"); // 'incidents' | 'hospitals' | 'risk' | 'shelters' | 'map' | 'feed'
 
   // Risk Analytics state
   const [riskSearch, setRiskSearch] = useState("");
@@ -195,6 +197,15 @@ export default function AuthorityDashboard() {
   // Proximity Clustering & Priority Alert System state
   const [selectedCluster, setSelectedCluster] = useState(null);
   const [dispatchingClusterId, setDispatchingClusterId] = useState(null);
+
+  // Emergency Alert Broadcasting State
+  const [alerts, setAlerts] = useState([]);
+  const [showAlertModal, setShowAlertModal] = useState(false);
+  const [newAlertTitle, setNewAlertTitle] = useState("");
+  const [newAlertSeverity, setNewAlertSeverity] = useState("CRITICAL");
+  const [newAlertZone, setNewAlertZone] = useState("");
+  const [newAlertInstructions, setNewAlertInstructions] = useState("");
+  const [broadcastingAlert, setBroadcastingAlert] = useState(false);
 
   // 1. Subscribe to SOS Requests in real-time
   useEffect(() => {
@@ -261,29 +272,41 @@ export default function AuthorityDashboard() {
     return () => unsubscribe();
   }, []);
 
-  // 3. Subscribe to Shelters in real-time
+  // 3. Subscribe to Shelters & Alerts in real-time
   useEffect(() => {
-    const q = collection(db, "shelters");
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        if (!snapshot.empty) {
-          const liveShelters = snapshot.docs.map((docSnap) => ({
-            id: docSnap.id,
-            ...docSnap.data(),
-          }));
-          setShelters(liveShelters);
+    const unsubShelters = onSnapshot(
+      collection(db, "shelters"),
+      (snap) => {
+        if (!snap.empty) {
+          const live = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          setShelters(live);
         } else {
           setShelters(INITIAL_MOCK_SHELTERS);
         }
       },
-      (error) => {
-        console.warn("Firestore Shelters listener warning in AuthorityDashboard:", error);
+      (err) => {
+        console.warn("Shelters snapshot listener:", err);
         setShelters(INITIAL_MOCK_SHELTERS);
       }
     );
 
-    return () => unsubscribe();
+    const unsubAlerts = onSnapshot(
+      collection(db, "alerts"),
+      (snap) => {
+        if (!snap.empty) {
+          const live = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          setAlerts(live);
+        }
+      },
+      (err) => {
+        console.warn("Alerts listener error in AuthorityDashboard:", err);
+      }
+    );
+
+    return () => {
+      unsubShelters();
+      unsubAlerts();
+    };
   }, []);
 
   // Proximity Clustering Engine: Groups active alerts within 500m & 15 mins
@@ -421,6 +444,43 @@ export default function AuthorityDashboard() {
     return true;
   });
 
+  // Emergency Alert Broadcasting Handlers
+  const handleBroadcastAlert = async (e) => {
+    e.preventDefault();
+    if (!newAlertTitle.trim()) return;
+    setBroadcastingAlert(true);
+    try {
+      await addDoc(collection(db, "alerts"), {
+        title: newAlertTitle.trim(),
+        severity: newAlertSeverity,
+        affectedZone: newAlertZone.trim() || "All High-Risk Sectors",
+        instructions: newAlertInstructions.trim() || "Evacuate low-lying areas immediately and head to designated shelters.",
+        isActive: true,
+        createdAt: serverTimestamp(),
+      });
+      setNewAlertTitle("");
+      setNewAlertZone("");
+      setNewAlertInstructions("");
+      setShowAlertModal(false);
+    } catch (err) {
+      console.error("Failed to broadcast emergency alert:", err);
+      alert(`Could not broadcast alert: ${err.message}`);
+    } finally {
+      setBroadcastingAlert(false);
+    }
+  };
+
+  const handleToggleAlertActive = async (alertId, currentActive) => {
+    try {
+      await updateDoc(doc(db, "alerts", alertId), {
+        isActive: !currentActive,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err) {
+      console.error("Failed to toggle alert status:", err);
+    }
+  };
+
   return (
     <div className="eoc-container">
       {/* 1. Header & Navigation */}
@@ -557,6 +617,53 @@ export default function AuthorityDashboard() {
             {shelters.length} Shelters
           </span>
         </button>
+
+        <button
+          className={`eoc-tab-btn ${activeTab === "map" ? "active" : ""}`}
+          onClick={() => setActiveTab("map")}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" />
+            <line x1="8" y1="2" x2="8" y2="18" />
+            <line x1="16" y1="6" x2="16" y2="22" />
+          </svg>
+          Route Overlay Map
+        </button>
+
+        <button
+          className={`eoc-tab-btn ${activeTab === "feed" ? "active" : ""}`}
+          onClick={() => setActiveTab("feed")}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+          </svg>
+          Citizen Feed
+          <span className="eoc-tab-badge" style={{ color: "#34D399" }}>
+            Live
+          </span>
+        </button>
+
+        {/* Emergency Alert Broadcast Button */}
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center" }}>
+          <button
+            type="button"
+            className="eoc-tab-btn"
+            style={{
+              background: "rgba(220, 38, 38, 0.2)",
+              color: "#FCA5A5",
+              border: "1px solid #EF4444",
+              fontWeight: 800,
+            }}
+            onClick={() => setShowAlertModal(true)}
+          >
+            📢 Broadcast Warning
+            {alerts.filter((a) => a.isActive !== false).length > 0 && (
+              <span className="eoc-tab-badge" style={{ background: "#EF4444", color: "#FFFFFF" }}>
+                {alerts.filter((a) => a.isActive !== false).length} Active
+              </span>
+            )}
+          </button>
+        </div>
       </nav>
 
       {/* Main Content Area */}
@@ -1302,6 +1409,24 @@ export default function AuthorityDashboard() {
             <ShelterTracker isEmbedded={true} />
           </div>
         )}
+
+        {/* ========================================================================= */}
+        {/* VIEW 5: DISASTER ROUTE OVERLAY MAP                                        */}
+        {/* ========================================================================= */}
+        {activeTab === "map" && (
+          <div style={{ width: "100%", marginTop: "10px" }}>
+            <DisasterMap isEmbedded={true} />
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* VIEW 6: CROWDSOURCED DISASTER FEED                                        */}
+        {/* ========================================================================= */}
+        {activeTab === "feed" && (
+          <div style={{ width: "100%", marginTop: "10px" }}>
+            <DisasterFeed isAuthorityView={true} />
+          </div>
+        )}
       </main>
 
       {/* Cluster Detail Drawer & Emergency Dispatch Sidebar */}
@@ -1340,6 +1465,135 @@ export default function AuthorityDashboard() {
             className="eoc-lightbox-img"
             onClick={(e) => e.stopPropagation()}
           />
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* EMERGENCY ALERT BROADCAST MODAL                                */}
+      {/* ============================================================ */}
+      {showAlertModal && (
+        <div className="risk-modal-overlay" onClick={() => setShowAlertModal(false)}>
+          <div className="risk-modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "580px" }}>
+            <div className="risk-modal-header" style={{ borderBottom: "1px solid #30363D" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <span style={{ background: "rgba(239, 68, 68, 0.2)", color: "#EF4444", padding: "4px 8px", borderRadius: "6px", fontWeight: 800, fontSize: "0.8rem" }}>
+                  📢 EMERGENCY ALERT SYSTEM
+                </span>
+                <h3 style={{ margin: 0, color: "#FFFFFF", fontSize: "1.1rem" }}>
+                  Broadcast Citizen Warning
+                </h3>
+              </div>
+              <button
+                type="button"
+                className="risk-modal-close"
+                onClick={() => setShowAlertModal(false)}
+              >
+                &times;
+              </button>
+            </div>
+
+            <form onSubmit={handleBroadcastAlert} style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "14px" }}>
+              <div>
+                <label style={{ fontSize: "0.82rem", color: "#94A3B8", fontWeight: 700, display: "block", marginBottom: "4px" }}>
+                  Alert Title <span style={{ color: "#EF4444" }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  className="eoc-search-input"
+                  style={{ width: "100%", boxSizing: "border-box" }}
+                  placeholder="e.g. RED FLASH FLOOD WARNING & DAM DISCHARGE"
+                  value={newAlertTitle}
+                  onChange={(e) => setNewAlertTitle(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div style={{ display: "flex", gap: "12px" }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: "0.82rem", color: "#94A3B8", fontWeight: 700, display: "block", marginBottom: "4px" }}>
+                    Severity Level
+                  </label>
+                  <select
+                    className="eoc-search-input"
+                    style={{ width: "100%", background: "#0D1117", color: "#FFFFFF", boxSizing: "border-box" }}
+                    value={newAlertSeverity}
+                    onChange={(e) => setNewAlertSeverity(e.target.value)}
+                  >
+                    <option value="CRITICAL">🔴 CRITICAL (Flashing Red Banner)</option>
+                    <option value="HIGH">🟡 HIGH (Urgent Warning)</option>
+                    <option value="ADVISORY">🔵 ADVISORY (Precautionary)</option>
+                  </select>
+                </div>
+
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: "0.82rem", color: "#94A3B8", fontWeight: 700, display: "block", marginBottom: "4px" }}>
+                    Affected Sector / Zone
+                  </label>
+                  <input
+                    type="text"
+                    className="eoc-search-input"
+                    style={{ width: "100%", boxSizing: "border-box" }}
+                    placeholder="e.g. Wakad / Sangvi / Mula Basin"
+                    value={newAlertZone}
+                    onChange={(e) => setNewAlertZone(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize: "0.82rem", color: "#94A3B8", fontWeight: 700, display: "block", marginBottom: "4px" }}>
+                  Actionable Evacuation Instructions
+                </label>
+                <textarea
+                  className="eoc-search-input"
+                  style={{ width: "100%", minHeight: "70px", boxSizing: "border-box", fontFamily: "inherit", resize: "vertical" }}
+                  placeholder="e.g. Move immediately to high ground. Ravet & Wakad relief centers are active and open."
+                  value={newAlertInstructions}
+                  onChange={(e) => setNewAlertInstructions(e.target.value)}
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="eoc-batch-dispatch-btn"
+                style={{ background: "#EF4444", borderColor: "#F87171", marginTop: "6px" }}
+                disabled={broadcastingAlert || !newAlertTitle.trim()}
+              >
+                {broadcastingAlert ? "Broadcasting..." : "🚨 Transmit Live Warning Broadcast"}
+              </button>
+            </form>
+
+            {/* Active Alerts Management List */}
+            {alerts.length > 0 && (
+              <div style={{ padding: "0 20px 20px", borderTop: "1px solid #21262D", marginTop: "10px" }}>
+                <h4 style={{ fontSize: "0.85rem", color: "#94A3B8", margin: "14px 0 8px" }}>
+                  Currently Managed Alerts ({alerts.length})
+                </h4>
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "180px", overflowY: "auto" }}>
+                  {alerts.map((al) => (
+                    <div key={al.id} style={{ background: "#0D1117", border: "1px solid #30363D", borderRadius: "8px", padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div>
+                        <strong style={{ color: al.isActive !== false ? "#EF4444" : "#8B949E", fontSize: "0.85rem" }}>
+                          {al.title}
+                        </strong>
+                        <div style={{ fontSize: "0.74rem", color: "#6E7681" }}>
+                          {al.affectedZone} • {al.isActive !== false ? "🟢 Broadcasting Active" : "⚪ Inactive"}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="eoc-filter-btn"
+                        style={{ fontSize: "0.72rem", padding: "4px 8px" }}
+                        onClick={() => handleToggleAlertActive(al.id, al.isActive !== false)}
+                      >
+                        {al.isActive !== false ? "Deactivate" : "Reactivate"}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

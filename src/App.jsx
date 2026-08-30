@@ -6,8 +6,10 @@ import HospitalDashboard from "./HospitalDashboard";
 import VolunteerPortal from './components/volunteer/VolunteerPortal';
 import ShelterTracker from "./ShelterTracker";
 import ShelterRegistration from "./ShelterRegistration";
-
-
+import DisasterMap from "./DisasterMap";
+import DisasterFeed from "./DisasterFeed";
+import AlertBanner from "./AlertBanner";
+import AIChatbot from "./AIChatbot";
 
 // Route Guard Component: Strictly isolates and protects the Authority Incident Command
 function ProtectedAuthorityRoute({ children }) {
@@ -25,6 +27,9 @@ function ProtectedAuthorityRoute({ children }) {
 function App() {
   return (
     <BrowserRouter>
+      {/* 4. Emergency Alerts System: Flashing Top Warning Banner */}
+      <AlertBanner />
+
       <Routes>
         {/* Public & Mobile-First User Portals */}
         <Route path="/" element={<HomePage />} />
@@ -33,6 +38,9 @@ function App() {
         <Route path="/volunteer" element={<VolunteerPortal />} />
         <Route path="/shelter" element={<ShelterRegistration />} />
         <Route path="/shelters" element={<ShelterTracker />} />
+        <Route path="/map" element={<DisasterMap />} />
+        <Route path="/feed" element={<DisasterFeed />} />
+
         {/* Protected Authority Operations Console */}
         <Route
           path="/authority"
@@ -46,6 +54,9 @@ function App() {
         {/* Catch-all route: Redirects any unknown paths back to home */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+
+      {/* 2. Level-Based AI Emergency Chatbot: Global Floating Drawer */}
+      <AIChatbot />
     </BrowserRouter>
   );
 }
