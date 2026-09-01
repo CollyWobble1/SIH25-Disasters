@@ -20,6 +20,14 @@ import "./AuthorityDashboard.css";
 import ShelterTracker, { INITIAL_MOCK_SHELTERS } from "./ShelterTracker";
 import DisasterMap from "./DisasterMap";
 import DisasterFeed from "./DisasterFeed";
+import AuthorityResourcePublisher from "./components/resources/AuthorityResourcePublisher";
+import {
+  RESOURCE_CATEGORIES,
+  RESOURCE_UNITS,
+  updateCommitmentStatus,
+  updateRequestStatus,
+  deleteResourceRequest,
+} from "./services/resourceMatchmakingService";
 
 // Unified Disaster Incident Lifecycle Status Normalizer
 export function getUnifiedStatus(reqOrStatus) {
@@ -207,6 +215,24 @@ export default function AuthorityDashboard() {
   const [newAlertInstructions, setNewAlertInstructions] = useState("");
   const [broadcastingAlert, setBroadcastingAlert] = useState(false);
 
+  // Real-Time Resource Matchmaking & Demands State
+  const [resourceRequests, setResourceRequests] = useState([]);
+  const [showResourceModal, setShowResourceModal] = useState(false);
+  const [isBroadcastingResource, setIsBroadcastingResource] = useState(false);
+  const [resourceFormData, setResourceFormData] = useState({
+    type: "goods",
+    category: "Food & Water",
+    title: "",
+    description: "",
+    quantityNeeded: "",
+    unit: "packs",
+    urgency: "CRITICAL",
+    address: "Central Disaster Relief Hub, Gate 2",
+    dropOffInstructions: "Deliver to Logistics Desk A.",
+    latitude: 28.6139,
+    longitude: 77.209,
+  });
+
   // 1. Subscribe to SOS Requests in real-time
   useEffect(() => {
     const q = collection(db, "sos_requests");
@@ -307,6 +333,45 @@ export default function AuthorityDashboard() {
       unsubShelters();
       unsubAlerts();
     };
+  }, []);
+
+  // 4. Subscribe to Resource Requests in real-time with onSnapshot
+  useEffect(() => {
+    const unsubResources = onSnapshot(
+      collection(db, "resource_requests"),
+      (snapshot) => {
+        const items = snapshot.docs.map((docSnap) => {
+          const data = docSnap.data();
+          const qNeeded = data.quantityNeeded !== undefined ? Number(data.quantityNeeded) : (Number(data.requiredQuantity) || 0);
+          const qFulfilled = data.quantityFulfilled !== undefined ? Number(data.quantityFulfilled) : (Number(data.fulfilledQuantity) || 0);
+
+          return {
+            id: docSnap.id,
+            ...data,
+            quantityNeeded: qNeeded,
+            requiredQuantity: qNeeded,
+            quantityFulfilled: qFulfilled,
+            fulfilledQuantity: qFulfilled,
+            type: data.type || "goods",
+            status: data.status || (qFulfilled >= qNeeded && qNeeded > 0 ? "CLOSED" : qFulfilled > 0 ? "PARTIALLY_FULFILLED" : "OPEN"),
+          };
+        });
+
+        // Sort descending by creation date
+        items.sort((a, b) => {
+          const timeA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : (a.createdAt?.seconds ? a.createdAt.seconds * 1000 : 0);
+          const timeB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : (b.createdAt?.seconds ? b.createdAt.seconds * 1000 : 0);
+          return timeB - timeA;
+        });
+
+        setResourceRequests(items);
+      },
+      (err) => {
+        console.warn("resource_requests listener error:", err);
+      }
+    );
+
+    return () => unsubResources();
   }, []);
 
   // Proximity Clustering Engine: Groups active alerts within 500m & 15 mins
@@ -481,10 +546,68 @@ export default function AuthorityDashboard() {
     }
   };
 
+  // Real-Time Resource Request Broadcast Handler
+  const handleBroadcastResourceRequest = async (e) => {
+    e.preventDefault();
+    if (!resourceFormData.title.trim() || !resourceFormData.quantityNeeded || Number(resourceFormData.quantityNeeded) <= 0) {
+      alert("Please provide a title and a valid quantity needed.");
+      return;
+    }
+
+    setIsBroadcastingResource(true);
+    try {
+      const qNeeded = Number(resourceFormData.quantityNeeded);
+      await addDoc(collection(db, "resource_requests"), {
+        authorityId: "HQ-INCIDENT-COMMAND",
+        type: resourceFormData.type, // 'goods' | 'services'
+        category: resourceFormData.category,
+        title: resourceFormData.title.trim(),
+        description: resourceFormData.description.trim(),
+        quantityNeeded: qNeeded,
+        requiredQuantity: qNeeded,
+        quantityFulfilled: 0,
+        fulfilledQuantity: 0,
+        unit: resourceFormData.unit || "units",
+        urgency: resourceFormData.urgency || "CRITICAL",
+        status: "OPEN", // 'OPEN' | 'PARTIALLY_FULFILLED' | 'CLOSED'
+        location: {
+          latitude: Number(resourceFormData.latitude) || 28.6139,
+          longitude: Number(resourceFormData.longitude) || 77.209,
+          address: resourceFormData.address.trim() || "Central Disaster Relief Hub",
+          dropOffInstructions: resourceFormData.dropOffInstructions.trim() || "Report to Logistics Desk A.",
+        },
+        commitments: [],
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      setResourceFormData({
+        type: "goods",
+        category: "Food & Water",
+        title: "",
+        description: "",
+        quantityNeeded: "",
+        unit: "packs",
+        urgency: "CRITICAL",
+        address: "Central Disaster Relief Hub, Gate 2",
+        dropOffInstructions: "Deliver to Logistics Desk A.",
+        latitude: 28.6139,
+        longitude: 77.209,
+      });
+      setShowResourceModal(false);
+      alert("✅ Resource Request successfully broadcast to all active volunteers!");
+    } catch (err) {
+      console.error("Failed to broadcast resource request:", err);
+      alert(`Could not broadcast resource request: ${err.message}`);
+    } finally {
+      setIsBroadcastingResource(false);
+    }
+  };
+
   return (
-    <div className="eoc-container">
+    <div className="eoc-container min-h-screen bg-slate-950 max-w-full overflow-x-hidden p-6">
       {/* 1. Header & Navigation */}
-      <header className="eoc-navbar">
+      <header className="eoc-navbar flex-wrap">
         <div className="eoc-brand">
           <div className="eoc-brand-icon" aria-hidden="true">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -497,13 +620,6 @@ export default function AuthorityDashboard() {
           </div>
         </div>
 
-        <div className="eoc-nav-right">
-          {/* Live Status Indicator */}
-          <div className="eoc-live-badge" title="Real-time WebSocket / Firestore feed active">
-            <span className="eoc-pulse-dot" />
-            <span>Live Monitoring Active</span>
-          </div>
-        </div>
       </header>
 
       {/* Live Mass Emergency Flash Bar for Proximity Clusters */}
@@ -550,7 +666,7 @@ export default function AuthorityDashboard() {
       )}
 
       {/* Top View Mode Tabs: Live SOS Requests vs Hospital Capacity vs Risk Analytics */}
-      <nav className="eoc-view-tabs">
+      <nav className="eoc-view-tabs flex-wrap">
         <button
           className={`eoc-tab-btn ${activeTab === "incidents" ? "active" : ""}`}
           onClick={() => setActiveTab("incidents")}
@@ -643,8 +759,38 @@ export default function AuthorityDashboard() {
           </span>
         </button>
 
-        {/* Emergency Alert Broadcast Button */}
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center" }}>
+        {/* Resource Matchmaking & Demands Tab */}
+        <button
+          className={`eoc-tab-btn ${activeTab === "resources" ? "active" : ""}`}
+          onClick={() => setActiveTab("resources")}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+            <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+            <line x1="12" y1="22.08" x2="12" y2="12" />
+          </svg>
+          Resource Matchmaking
+          <span className="eoc-tab-badge" style={{ color: "#34D399" }}>
+            {resourceRequests.filter((r) => r.status !== "CLOSED").length} Active
+          </span>
+        </button>
+
+        {/* Emergency Alert & Resource Broadcast Button Group */}
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+          <button
+            type="button"
+            className="eoc-tab-btn"
+            style={{
+              background: "linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(5, 150, 105, 0.15))",
+              color: "#6EE7B7",
+              border: "1px solid #10B981",
+              fontWeight: 800,
+            }}
+            onClick={() => setShowResourceModal(true)}
+          >
+            📦 Broadcast Need
+          </button>
+
           <button
             type="button"
             className="eoc-tab-btn"
@@ -673,6 +819,136 @@ export default function AuthorityDashboard() {
         {/* ========================================================================= */}
         {activeTab === "incidents" && (
           <>
+            {/* Real-time Active Resource Drives & Fulfillment Progress Bar Strip */}
+            {resourceRequests.length > 0 && (
+              <div style={{
+                background: "rgba(15, 23, 42, 0.75)",
+                border: "1px solid rgba(51, 65, 85, 0.8)",
+                borderRadius: "12px",
+                padding: "12px 16px",
+                marginBottom: "16px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "10px",
+                boxShadow: "0 4px 16px rgba(0, 0, 0, 0.3)"
+              }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span style={{ fontSize: "16px" }}>📦</span>
+                    <span style={{ fontSize: "0.85rem", fontWeight: 800, color: "#F1F5F9", letterSpacing: "0.3px" }}>
+                      ACTIVE RESOURCE DRIVES & AID MATCHMAKING
+                    </span>
+                    <span style={{
+                      fontSize: "0.7rem",
+                      fontWeight: 800,
+                      background: "rgba(16, 185, 129, 0.2)",
+                      color: "#34D399",
+                      border: "1px solid rgba(16, 185, 129, 0.4)",
+                      padding: "2px 8px",
+                      borderRadius: "12px"
+                    }}>
+                      {resourceRequests.filter(r => r.status !== "CLOSED").length} Active Needs
+                    </span>
+                  </div>
+
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowResourceModal(true)}
+                      style={{
+                        fontSize: "0.75rem",
+                        fontWeight: 800,
+                        background: "#10B981",
+                        color: "#FFFFFF",
+                        border: "none",
+                        borderRadius: "6px",
+                        padding: "4px 10px",
+                        cursor: "pointer"
+                      }}
+                    >
+                      + Broadcast Request
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("resources")}
+                      style={{
+                        fontSize: "0.75rem",
+                        fontWeight: 700,
+                        background: "rgba(30, 41, 59, 0.8)",
+                        color: "#94A3B8",
+                        border: "1px solid #334155",
+                        borderRadius: "6px",
+                        padding: "4px 10px",
+                        cursor: "pointer"
+                      }}
+                    >
+                      Manage All &rarr;
+                    </button>
+                  </div>
+                </div>
+
+                {/* Horizontal Drive Cards with Live Progress Bars */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "10px" }}>
+                  {resourceRequests.slice(0, 4).map((resItem) => {
+                    const qN = resItem.quantityNeeded || resItem.requiredQuantity || 1;
+                    const qF = resItem.quantityFulfilled || resItem.fulfilledQuantity || 0;
+                    const pct = Math.min(100, Math.round((qF / qN) * 100));
+                    const isCritical = resItem.urgency === "CRITICAL";
+
+                    return (
+                      <div key={resItem.id} style={{
+                        background: "rgba(2, 6, 23, 0.6)",
+                        border: `1px solid ${isCritical ? "rgba(239, 68, 68, 0.4)" : "rgba(51, 65, 85, 0.5)"}`,
+                        borderRadius: "8px",
+                        padding: "8px 12px",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "6px"
+                      }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span style={{
+                            fontSize: "0.7rem",
+                            fontWeight: 800,
+                            color: resItem.type === "goods" ? "#34D399" : "#60A5FA",
+                            textTransform: "uppercase"
+                          }}>
+                            {resItem.type === "goods" ? "📦 Goods" : "🤝 Service"} • {resItem.category}
+                          </span>
+                          <span style={{
+                            fontSize: "0.68rem",
+                            fontWeight: 900,
+                            color: isCritical ? "#EF4444" : "#F59E0B"
+                          }}>
+                            {resItem.urgency}
+                          </span>
+                        </div>
+
+                        <div style={{ fontSize: "0.82rem", fontWeight: 700, color: "#FFFFFF", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {resItem.title}
+                        </div>
+
+                        {/* Progress Bar */}
+                        <div style={{ width: "100%", background: "#1E293B", borderRadius: "9999px", height: "6px", overflow: "hidden" }}>
+                          <div style={{
+                            width: `${pct}%`,
+                            height: "100%",
+                            background: pct >= 100 ? "#10B981" : pct >= 50 ? "#F59E0B" : "#EF4444",
+                            borderRadius: "9999px",
+                            transition: "width 0.3s ease"
+                          }} />
+                        </div>
+
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.72rem", color: "#94A3B8" }}>
+                          <span>{qF} / {qN} {resItem.unit || "units"}</span>
+                          <span style={{ fontWeight: 800, color: pct >= 100 ? "#34D399" : "#FCD34D" }}>{pct}% Fulfilled</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Interactive Toolbar & Filter Bar */}
             <div className="eoc-toolbar">
               <div className="eoc-filter-bar" role="tablist" aria-label="Incident status filters">
@@ -1427,6 +1703,15 @@ export default function AuthorityDashboard() {
             <DisasterFeed isAuthorityView={true} />
           </div>
         )}
+
+        {/* ========================================================================= */}
+        {/* VIEW 7: RESOURCE DRIVES & VOLUNTEER MATCHMAKING                            */}
+        {/* ========================================================================= */}
+        {activeTab === "resources" && (
+          <div style={{ width: "100%", marginTop: "10px" }}>
+            <AuthorityResourcePublisher />
+          </div>
+        )}
       </main>
 
       {/* Cluster Detail Drawer & Emergency Dispatch Sidebar */}
@@ -1593,6 +1878,222 @@ export default function AuthorityDashboard() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* BROADCAST RESOURCE REQUEST INLINE MODAL                      */}
+      {/* ============================================================ */}
+      {showResourceModal && (
+        <div className="risk-modal-overlay" onClick={() => setShowResourceModal(false)}>
+          <div className="risk-modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "620px" }}>
+            <div className="risk-modal-header" style={{ borderBottom: "1px solid #30363D", background: "linear-gradient(135deg, rgba(6, 78, 59, 0.4), rgba(15, 23, 42, 0.9))" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <span style={{ background: "rgba(16, 185, 129, 0.2)", color: "#34D399", border: "1px solid rgba(16, 185, 129, 0.4)", padding: "4px 8px", borderRadius: "6px", fontWeight: 800, fontSize: "0.8rem" }}>
+                  📦 RESOURCE BROADCAST
+                </span>
+                <h3 style={{ margin: 0, color: "#FFFFFF", fontSize: "1.1rem" }}>
+                  Broadcast Disaster Resource Need
+                </h3>
+              </div>
+              <button
+                type="button"
+                className="risk-modal-close"
+                onClick={() => setShowResourceModal(false)}
+              >
+                &times;
+              </button>
+            </div>
+
+            <form onSubmit={handleBroadcastResourceRequest} style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "14px", maxHeight: "80vh", overflowY: "auto" }}>
+              {/* Type Toggle: Goods vs Services */}
+              <div>
+                <label style={{ fontSize: "0.82rem", color: "#94A3B8", fontWeight: 700, display: "block", marginBottom: "6px" }}>
+                  Request Type <span style={{ color: "#EF4444" }}>*</span>
+                </label>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                  <button
+                    type="button"
+                    onClick={() => setResourceFormData(p => ({ ...p, type: "goods" }))}
+                    style={{
+                      padding: "10px",
+                      borderRadius: "8px",
+                      border: resourceFormData.type === "goods" ? "2px solid #10B981" : "1px solid #334155",
+                      background: resourceFormData.type === "goods" ? "rgba(16, 185, 129, 0.15)" : "#0D1117",
+                      color: resourceFormData.type === "goods" ? "#34D399" : "#94A3B8",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "6px"
+                    }}
+                  >
+                    <span>📦</span> Goods / Supplies
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setResourceFormData(p => ({ ...p, type: "services" }))}
+                    style={{
+                      padding: "10px",
+                      borderRadius: "8px",
+                      border: resourceFormData.type === "services" ? "2px solid #3B82F6" : "1px solid #334155",
+                      background: resourceFormData.type === "services" ? "rgba(59, 130, 246, 0.15)" : "#0D1117",
+                      color: resourceFormData.type === "services" ? "#60A5FA" : "#94A3B8",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "6px"
+                    }}
+                  >
+                    <span>🤝</span> Services / Skills
+                  </button>
+                </div>
+              </div>
+
+              {/* Title */}
+              <div>
+                <label style={{ fontSize: "0.82rem", color: "#94A3B8", fontWeight: 700, display: "block", marginBottom: "4px" }}>
+                  Resource Title <span style={{ color: "#EF4444" }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  className="eoc-search-input"
+                  style={{ width: "100%", boxSizing: "border-box" }}
+                  placeholder="e.g. Clean Bottled Drinking Water (1L Packs), Pediatrician Volunteers, Inflatable Boats"
+                  value={resourceFormData.title}
+                  onChange={(e) => setResourceFormData(p => ({ ...p, title: e.target.value }))}
+                  required
+                />
+              </div>
+
+              {/* Category & Urgency */}
+              <div style={{ display: "flex", gap: "12px" }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: "0.82rem", color: "#94A3B8", fontWeight: 700, display: "block", marginBottom: "4px" }}>
+                    Category
+                  </label>
+                  <select
+                    className="eoc-search-input"
+                    style={{ width: "100%", background: "#0D1117", color: "#FFFFFF", boxSizing: "border-box" }}
+                    value={resourceFormData.category}
+                    onChange={(e) => setResourceFormData(p => ({ ...p, category: e.target.value }))}
+                  >
+                    {RESOURCE_CATEGORIES.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: "0.82rem", color: "#94A3B8", fontWeight: 700, display: "block", marginBottom: "4px" }}>
+                    Urgency Level
+                  </label>
+                  <select
+                    className="eoc-search-input"
+                    style={{ width: "100%", background: "#0D1117", color: "#FFFFFF", boxSizing: "border-box" }}
+                    value={resourceFormData.urgency}
+                    onChange={(e) => setResourceFormData(p => ({ ...p, urgency: e.target.value }))}
+                  >
+                    <option value="CRITICAL">🔴 CRITICAL (Immediate triage)</option>
+                    <option value="HIGH">🟠 HIGH (Same-day target)</option>
+                    <option value="MEDIUM">🔵 MEDIUM (24-48 hr target)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Quantity Needed & Unit */}
+              <div style={{ display: "flex", gap: "12px" }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: "0.82rem", color: "#94A3B8", fontWeight: 700, display: "block", marginBottom: "4px" }}>
+                    Quantity Needed <span style={{ color: "#EF4444" }}>*</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    className="eoc-search-input"
+                    style={{ width: "100%", boxSizing: "border-box" }}
+                    placeholder="e.g. 500"
+                    value={resourceFormData.quantityNeeded}
+                    onChange={(e) => setResourceFormData(p => ({ ...p, quantityNeeded: e.target.value }))}
+                    required
+                  />
+                </div>
+
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: "0.82rem", color: "#94A3B8", fontWeight: 700, display: "block", marginBottom: "4px" }}>
+                    Unit of Measurement
+                  </label>
+                  <select
+                    className="eoc-search-input"
+                    style={{ width: "100%", background: "#0D1117", color: "#FFFFFF", boxSizing: "border-box" }}
+                    value={resourceFormData.unit}
+                    onChange={(e) => setResourceFormData(p => ({ ...p, unit: e.target.value }))}
+                  >
+                    {RESOURCE_UNITS.map(unit => (
+                      <option key={unit} value={unit}>{unit}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Address & Drop-Off Instructions */}
+              <div>
+                <label style={{ fontSize: "0.82rem", color: "#94A3B8", fontWeight: 700, display: "block", marginBottom: "4px" }}>
+                  Drop-off / Reporting Location Address <span style={{ color: "#EF4444" }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  className="eoc-search-input"
+                  style={{ width: "100%", boxSizing: "border-box" }}
+                  placeholder="e.g. Kashmiri Gate Relief Depot, Tent A"
+                  value={resourceFormData.address}
+                  onChange={(e) => setResourceFormData(p => ({ ...p, address: e.target.value }))}
+                  required
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: "0.82rem", color: "#94A3B8", fontWeight: 700, display: "block", marginBottom: "4px" }}>
+                  Drop-off / Contact Instructions
+                </label>
+                <input
+                  type="text"
+                  className="eoc-search-input"
+                  style={{ width: "100%", boxSizing: "border-box" }}
+                  placeholder="e.g. Report to Officer Sharma at Bay 2"
+                  value={resourceFormData.dropOffInstructions}
+                  onChange={(e) => setResourceFormData(p => ({ ...p, dropOffInstructions: e.target.value }))}
+                />
+              </div>
+
+              {/* Description */}
+              <div>
+                <label style={{ fontSize: "0.82rem", color: "#94A3B8", fontWeight: 700, display: "block", marginBottom: "4px" }}>
+                  Detailed Specifications & Notes
+                </label>
+                <textarea
+                  className="eoc-search-input"
+                  style={{ width: "100%", minHeight: "60px", boxSizing: "border-box", fontFamily: "inherit", resize: "vertical" }}
+                  placeholder="Provide clarity on packaging, expiry, required medical licensing, or vehicle access..."
+                  value={resourceFormData.description}
+                  onChange={(e) => setResourceFormData(p => ({ ...p, description: e.target.value }))}
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="eoc-batch-dispatch-btn"
+                style={{ background: "#10B981", borderColor: "#34D399", marginTop: "6px", color: "#FFFFFF" }}
+                disabled={isBroadcastingResource || !resourceFormData.title.trim() || !resourceFormData.quantityNeeded}
+              >
+                {isBroadcastingResource ? "Publishing to Real-Time Network..." : "⚡ Broadcast Resource Request to Volunteers"}
+              </button>
+            </form>
           </div>
         </div>
       )}

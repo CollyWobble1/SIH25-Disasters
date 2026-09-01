@@ -33,6 +33,8 @@
 
 .eoc-container {
   min-height: 100vh;
+  max-width: 100%;
+  overflow-x: hidden;
   background-color: var(--eoc-bg);
   color: var(--eoc-text-primary);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -47,6 +49,7 @@
   border-bottom: 1px solid var(--eoc-border);
   padding: 14px 28px;
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
   position: sticky;
@@ -98,6 +101,7 @@
 
 .eoc-nav-right {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 16px;
 }
@@ -150,6 +154,7 @@
   border-bottom: 1px solid var(--eoc-border);
   padding: 0 28px;
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -213,6 +218,7 @@
 
 .eoc-filter-bar {
   display: inline-flex;
+  flex-wrap: wrap;
   background-color: #161b22;
   border: 1px solid var(--eoc-border);
   padding: 4px;

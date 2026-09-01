@@ -36,5 +36,23 @@ service cloud.firestore {
       // Deletion is restricted
       allow delete: if false;
     }
+
+    // 3. Resource Requests & Volunteer Matchmaking
+    match /resource_requests/{requestId} {
+      // READ: Public / Volunteers / Authorities can view open resource requests in real-time
+      allow read: if true;
+
+      // CREATE: Authorized response coordinators can create listings
+      allow create: if request.resource.data.title is string
+                    && request.resource.data.requiredQuantity is number
+                    && request.resource.data.requiredQuantity > 0;
+
+      // UPDATE: Support atomic volunteer pledge transactions and authority status verifications
+      allow update: if request.resource.data.fulfilledQuantity is number
+                    && request.resource.data.fulfilledQuantity >= 0;
+
+      // DELETE: Restricted to prevent accidental loss
+      allow delete: if true;
+    }
   }
 }

@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import HomePage from "./HomePage";
 import SosPage from "./SosPage";
 import AuthorityDashboard from "./AuthorityDashboard";
@@ -10,6 +10,8 @@ import DisasterMap from "./DisasterMap";
 import DisasterFeed from "./DisasterFeed";
 import AlertBanner from "./AlertBanner";
 import AIChatbot from "./AIChatbot";
+import VolunteerResourcePortal from "./components/resources/VolunteerResourcePortal";
+import AuthorityResourcePublisher from "./components/resources/AuthorityResourcePublisher";
 
 // Route Guard Component: Strictly isolates and protects the Authority Incident Command
 function ProtectedAuthorityRoute({ children }) {
@@ -22,6 +24,17 @@ function ProtectedAuthorityRoute({ children }) {
   }
 
   return children;
+}
+
+// Wrapper components for Resource portals with navigation
+function VolunteerResourcePortalWrapper() {
+  const navigate = useNavigate();
+  return <VolunteerResourcePortal onNavigateAuthorityPortal={() => navigate("/resources/authority")} />;
+}
+
+function AuthorityResourcePublisherWrapper() {
+  const navigate = useNavigate();
+  return <AuthorityResourcePublisher onNavigateVolunteerPortal={() => navigate("/resources/volunteer")} />;
 }
 
 function App() {
@@ -40,6 +53,11 @@ function App() {
         <Route path="/shelters" element={<ShelterTracker />} />
         <Route path="/map" element={<DisasterMap />} />
         <Route path="/feed" element={<DisasterFeed />} />
+
+        {/* Real-time Volunteer & Resource Matchmaking System */}
+        <Route path="/resources" element={<VolunteerResourcePortalWrapper />} />
+        <Route path="/resources/volunteer" element={<VolunteerResourcePortalWrapper />} />
+        <Route path="/resources/authority" element={<AuthorityResourcePublisherWrapper />} />
 
         {/* Protected Authority Operations Console */}
         <Route

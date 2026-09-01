@@ -1,0 +1,62 @@
+/* ResQGrid Resource & Volunteer Matchmaking Stylesheet */
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(239, 68, 68, 0.6);
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(239, 68, 68, 0.95);
+  }
+}
+
+.custom-authority-map-pin {
+  background: transparent;
+  border: none;
+}
+
+.custom-volunteer-map-pin {
+  background: transparent;
+  border: none;
+}
+
+.custom-user-location-pin {
+  background: transparent;
+  border: none;
+}
+
+.leaflet-popup-content-wrapper {
+  background: #0f172a !important;
+  color: #f8fafc !important;
+  border-radius: 14px !important;
+  border: 1px solid #334155 !important;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5) !important;
+  padding: 4px !important;
+}
+
+.leaflet-popup-tip {
+  background: #0f172a !important;
+}
+
+.leaflet-container {
+  font-family: inherit !important;
+  z-index: 10 !important;
+}
+
+/* Custom scrollbars inside tables and drawers */
+.resq-resource-system ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.resq-resource-system ::-webkit-scrollbar-track {
+  background: #0f172a;
+}
+
+.resq-resource-system ::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 4px;
+}
+
+.resq-resource-system ::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
